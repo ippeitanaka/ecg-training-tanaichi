@@ -32,6 +32,11 @@
   .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
   .pill{display:inline-block; padding:4px 8px; border-radius:999px; background:#13223a; border:1px solid #20304f; font-size:12px; color:var(--muted)}
   .answer{font-size:16px; color:var(--ink)}
+  .controls{background:rgba(255,255,255,0.03); border:1px solid #22304a; border-radius:12px; padding:12px; margin:12px 0}
+  .control-group{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+  .control-group label{color:var(--muted); font-size:12px; min-width:40px}
+  .control-group input[type="range"]{flex:1; min-width:80px}
+  .control-group select{background:var(--btn-bg); color:var(--btn-ink); border:1px solid var(--btn-bd); padding:4px 8px; border-radius:6px}
   footer.site-footer{ margin-top:8px; padding:12px 16px; background:var(--panel); border-top:1px solid #1f2b3f; color:var(--muted); font-size:12px; text-align:center }
 </style>
 </head>
@@ -46,7 +51,36 @@
   </div>
 </header>
 <main>
-  <div class="pill">ランダム出題: 現在の描画と同じ物理スケール（25mm/s・10mm/mV）</div>
+  <div class="pill">ランダム出題: 現在の描画と同じ物理スケール</div>
+  
+  <div class="controls">
+    <div class="control-group">
+      <label for="speed">速度</label>
+      <input id="speed" type="range" min="10" max="50" value="25">
+      <span id="speedLbl">25</span> mm/s
+      
+      <label for="gain">感度</label>
+      <input id="gain" type="range" min="5" max="20" value="10">
+      <span id="gainLbl">10</span> mm/mV
+      
+      <label for="leadSel">誘導</label>
+      <select id="leadSel">
+        <option value="II" selected>II</option>
+        <option value="I">I</option>
+        <option value="III">III</option>
+        <option value="aVR">aVR</option>
+        <option value="aVL">aVL</option>
+        <option value="aVF">aVF</option>
+        <option value="V1">V1</option>
+        <option value="V2">V2</option>
+        <option value="V3">V3</option>
+        <option value="V4">V4</option>
+        <option value="V5">V5</option>
+        <option value="V6">V6</option>
+      </select>
+    </div>
+  </div>
+  
   <div id="stage">
     <canvas id="gridCanvas" width="1200" height="320" aria-hidden="true"></canvas>
     <canvas id="ecgCanvas" width="1200" height="320" role="img" aria-label="ECG 波形表示キャンバス">ECG 波形を表示するキャンバス</canvas>
@@ -69,8 +103,8 @@ let beatCounter=0; let ronCounter=0; let ronFlag=false;
 let currentPR = 160; let wenckCount=0; const wenckLen=5; const wenckPRstart=160; const wenckPRstep=40; let wenckDropThisBeat=false; let mobitzCount=0; const mobitzLen=3; let mobitzDropThisBeat=false;
 let currentPVCSign=1;
 
-// Lead scaling (follow selection from index page via localStorage)
-let lead = (()=>{ try{return localStorage.getItem('ecg.lead')||'II';}catch{return 'II';} })();
+// Lead scaling - independent of main page
+let lead = 'II';
 const LEAD_COEFF = {
   I:{p:0.7,qrs:0.7,t:0.6}, II:{p:1.0,qrs:1.0,t:1.0}, III:{p:0.85,qrs:0.85,t:0.9},
   aVR:{p:-0.5,qrs:-0.6,t:-0.5}, aVL:{p:0.4,qrs:0.4,t:0.4}, aVF:{p:0.9,qrs:0.95,t:0.9},
@@ -379,9 +413,34 @@ document.getElementById('reveal').addEventListener('click', ()=>{
 
 document.getElementById('next').addEventListener('click', ()=> start());
 
+// Control event listeners
+document.getElementById('speed').addEventListener('input', e => {
+  mmPerSec = +e.target.value;
+  document.getElementById('speedLbl').textContent = mmPerSec;
+});
+
+document.getElementById('gain').addEventListener('input', e => {
+  mmPerMv = +e.target.value;
+  document.getElementById('gainLbl').textContent = mmPerMv;
+});
+
+document.getElementById('leadSel').addEventListener('change', e => {
+  lead = e.target.value;
+});
+
+// Initialize controls
+function initControls(){
+  document.getElementById('speed').value = mmPerSec;
+  document.getElementById('speedLbl').textContent = mmPerSec;
+  document.getElementById('gain').value = mmPerMv;
+  document.getElementById('gainLbl').textContent = mmPerMv;
+  document.getElementById('leadSel').value = lead;
+}
+
 // theme sync with index.html
 (function initTheme(){ const saved=(()=>{ try{return localStorage.getItem('ecg.theme');}catch{return null;}})(); if(saved){ document.documentElement.setAttribute('data-theme', saved);} })();
 
+initControls();
 start();
 requestAnimationFrame((ts)=>{ lastTS=ts; requestAnimationFrame(animate); });
 </script>
