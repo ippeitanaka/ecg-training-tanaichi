@@ -144,7 +144,7 @@ function gauss(x, mu, sigma, amp){ const z=(x-mu)/sigma; return amp*Math.exp(-0.
 function skewGauss(x, mu, sigmaL, sigmaR, amp){ const s=x<mu? sigmaL:sigmaR; const z=(x-mu)/s; return amp*Math.exp(-0.5*z*z); }
 function morphBasic(p, opts){
   const {pr=160, qrs=90, qt=380, pAmp=0.25, qAmp=-0.05, rAmp=1.0, sAmp=-0.15, tAmp=0.25, tSkew=1.3, uAmp=0.0} = opts;
-  let mv=0; mv += skewGauss(p, 40, 25, 25, pAmp);
+  let mv=0; mv += skewGauss(p, 40, 32, 32, pAmp);
   const qrsScale = Math.max(0.8, (opts.qrs||90) / 90);
   mv += gauss(p, pr + qrs * 0.1, 10*qrsScale, qAmp);
   mv += gauss(p, pr + qrs * 0.35, 12*qrsScale, rAmp);
@@ -243,13 +243,13 @@ function morphValue(kind, p, drop = false) {
     }
 
     case 'afl': {
+      // Clearer sawtooth F-waves: fast rise (~15%), slow decay (~85%), higher amplitude
       setSeg(100, 80, 360);
       const base = morphBasic(p, { pr: 100, qrs: 80, qt: 360, pAmp: 0.0, qAmp: -0.05, rAmp: 1.0, sAmp: -0.12, tAmp: 0.20 });
-      const period = 200;
-      const pos = p % period;
-      const rise = Math.min(1, pos / (period * 0.8));
-      const fall = pos >= period * 0.8 ? (1 - (pos - period * 0.8) / (period * 0.2)) : 1;
-      const fWave = 0.22 * (rise * fall);
+      const period = 200; // ~300/min
+      const f = (p % period) / period;
+      const tooth = f < 0.15 ? (f / 0.15) : (1 - (f - 0.15) / 0.85);
+      const fWave = 0.30 * (tooth * 2 - 1);
       return base + fWave;
     }
 
@@ -392,7 +392,11 @@ function schedule(kind){
     case 'hyperK': return [800];
     case 'qtcLong': return [900];
     case 'qtcShort': return [700];
-    case 'pvc_single': return [810, 795, 805, 590, 1010, 785];
+    case 'pvc_single': {
+      // 約15秒に1回の単発PVC（洞 830ms×16 ≒ 13.3s + PVC 600ms + 代償休止 1000ms）
+      const normals = Array(16).fill(830);
+      return [...normals, 600, 1000];
+    }
     case 'pvc_frequent': return [815, 595, 1005, 790, 605, 995];
     case 'pvc_multifocal': return [840, 560, 1020, 810, 630, 960];
     case 'shortRun': {

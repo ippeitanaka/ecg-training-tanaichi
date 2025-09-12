@@ -301,7 +301,7 @@ function morphBasic(p, opts){
   const {pr=160, qrs=90, qt=380, pAmp=0.25, qAmp=-0.05, rAmp=1.0, sAmp=-0.15, tAmp=0.25, tSkew=1.3, uAmp=0.0} = opts;
   let mv=0;
   // P wave – small positive deflection; centre at 40 ms with more rounded shape
-  mv += skewGauss(p, 40, 25, 25, pAmp);
+  mv += skewGauss(p, 40, 32, 32, pAmp);
   // Q wave – small negative deflection at onset of QRS; centre slightly after PR onset
   const qrsScale = Math.max(0.8, qrs / 90);
   mv += gauss(p, pr + qrs * 0.1, 10 * qrsScale, qAmp);
@@ -400,15 +400,13 @@ function morphValue(kind,p, drop=false){
       return mv;
     }
     case 'afl':{
-      // Atrial flutter: sawtooth F waves ~300 bpm with 2:1 conduction; sharpened asymmetry
+      // Atrial flutter: clearer sawtooth baseline (fast rise ~15%, slow decay ~85%)
       setSeg(100,80,360);
       const base = morphBasic(p,{pr:100,qrs:80,qt:360,pAmp:0.0,qAmp:-0.05,rAmp:1.0,sAmp:-0.12,tAmp:0.20});
-      const period = 200; // ms (~300/min)
-      const pos = p % period;
-      // Sawtooth: slow rise then sharp drop
-      const rise = Math.min(1, pos/(period*0.8));
-      const fall = pos >= period*0.8 ? (1 - (pos - period*0.8)/(period*0.2)) : 1;
-      const fWave = 0.22 * (rise * fall);
+      const period = 200; // ~300/min
+      const f = (p % period) / period;
+      const tooth = f < 0.15 ? (f / 0.15) : (1 - (f - 0.15) / 0.85);
+      const fWave = 0.30 * (tooth * 2 - 1);
       return base + fWave;
     }
     case 'wpw':{
@@ -553,10 +551,9 @@ function schedule(kind){
     case 'qtcLong': return [900];
     case 'qtcShort': return [700];
     case 'pvc_single':{
-      // 1つのPVC：数拍洞調律→早期結合（600ms）→代償休止（~1000ms）
-      const base = 800;
-      const jitter = () => (Math.random()*30-15);
-      return [base+jitter(), base+jitter(), base+jitter(), 600+jitter(), 1000+jitter(), base+jitter()];
+      // 約15秒に1回のPVC（洞 830ms×16 ≒ 13.3s + PVC 600ms + 代償休止 1000ms）
+      const normals = Array(16).fill(830);
+      return [...normals, 600, 1000];
     }
     case 'pvc_frequent':{
       // 二段脈（bigeminy）近傍：洞拍→結合→代償休止の繰り返し
