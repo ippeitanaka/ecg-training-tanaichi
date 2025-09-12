@@ -24,9 +24,9 @@
   header{display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:var(--panel); border-bottom:1px solid #1f2b3f}
   .btn{background:var(--btn-bg); color:var(--btn-ink); border:1px solid var(--btn-bd); padding:8px 12px; border-radius:10px; cursor:pointer; text-decoration:none; display:inline-block}
   main{padding:16px}
-  #stage{position:relative; height:360px}
+  #stage{position:relative; height:340px}
   #stage canvas{position:absolute; left:0; top:0}
-  canvas{display:block; width:100%; height:340px; border-radius:12px; border:none; background:var(--bg)}
+  canvas{display:block; width:100%; height:320px; border-radius:12px; border:none; background:transparent}
   #gridCanvas{background:var(--bg); border:1px solid #253554;}
   #ecgCanvas{background:transparent;}
   .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
@@ -48,8 +48,8 @@
 <main>
   <div class="pill">ランダム出題: 現在の描画と同じ物理スケール（25mm/s・10mm/mV）</div>
   <div id="stage">
-    <canvas id="gridCanvas" width="1200" height="340" aria-hidden="true"></canvas>
-    <canvas id="ecgCanvas" width="1200" height="340" role="img" aria-label="ECG 波形表示キャンバス">ECG 波形を表示するキャンバス</canvas>
+    <canvas id="gridCanvas" width="1200" height="320" aria-hidden="true"></canvas>
+    <canvas id="ecgCanvas" width="1200" height="320" role="img" aria-label="ECG 波形表示キャンバス">ECG 波形を表示するキャンバス</canvas>
   </div>
   <p class="answer" id="ans" aria-live="polite"></p>
 </main>
@@ -93,11 +93,13 @@ function applyLeadScaling(val, p){
 function msToPx(ms){ return (ms/1000)*mmPerSec * pxPerMM; }
 function mvToPx(mv){ return -mv*mmPerMv * pxPerMM; }
 function drawGrid(){
-  const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg') || '#0b101a';
-  const sm = getComputedStyle(document.documentElement).getPropertyValue('--grid-sm') || 'rgba(255,255,255,0.06)';
-  const lg = getComputedStyle(document.documentElement).getPropertyValue('--grid-lg') || 'rgba(255,255,255,0.10)';
+  const cs = getComputedStyle(document.documentElement);
+  const bg = cs.getPropertyValue('--bg') || '#0b101a';
+  const sm = cs.getPropertyValue('--grid-sm') || 'rgba(255,255,255,0.06)';
+  const lg = cs.getPropertyValue('--grid-lg') || 'rgba(255,255,255,0.10)';
   gtx.fillStyle = bg; gtx.fillRect(0,0,W,H);
-  gtx.lineWidth = 1; gtx.strokeStyle = sm;
+  gtx.lineWidth = 1;
+  gtx.strokeStyle = sm;
   for(let x=0; x<=W; x+=pxPerMM){ gtx.beginPath(); gtx.moveTo(x,0); gtx.lineTo(x,H); gtx.stroke(); }
   for(let y=0; y<=H; y+=pxPerMM){ gtx.beginPath(); gtx.moveTo(0,y); gtx.lineTo(W,y); gtx.stroke(); }
   gtx.strokeStyle = lg;
@@ -212,18 +214,17 @@ function updateCycle(){
 }
 function shouldDrop(kind){ if(kind==='mobitz2'){ return mobitzDropThisBeat;} if(kind==='wenckebach'){ return wenckDropThisBeat;} if(kind==='chb') return false; return false; }
 function scrollAndDraw(val){
-  // より効率的なスクロール - drawImageを使用
+  // 二層Canvas: gridCanvasは固定、ecgCanvasのみスクロール
   ctx.globalCompositeOperation = 'copy';
   ctx.drawImage(waveCanvas, -1, 0);
   ctx.globalCompositeOperation = 'source-over';
   
-  // 背景色で右端をクリア
-  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg') || '#0b101a';
-  ctx.fillRect(W-1, 0, 1, H);
+  // 右端をクリア（透明）
+  ctx.clearRect(W-1, 0, 1, H);
   
   // 新しい点を描画
   const y = baselineY + mvToPx(applyLeadScaling(val, phase));
-  ctx.strokeStyle = '#5eead4';
+  ctx.strokeStyle = '#22d3ee';
   ctx.lineWidth = 2;
   
   if(lastDrawY !== null){
@@ -294,29 +295,19 @@ function resizeCanvas(){
   const rect = waveCanvas.getBoundingClientRect();
   const cssW = Math.max(600, Math.floor(rect.width));
   const cssH = Math.floor(rect.height);
+  waveCanvas.width = Math.floor(cssW * dpr);
+  waveCanvas.height = Math.floor(cssH * dpr);
+  gridCanvas.width = Math.floor(cssW * dpr);
+  gridCanvas.height = Math.floor(cssH * dpr);
+  pxPerMM = basePxPerMM * dpr;
+  W = waveCanvas.width; H = waveCanvas.height; baselineY = H * 0.6;
   
-  const newW = Math.floor(cssW * dpr);
-  const newH = Math.floor(cssH * dpr);
+  // コンテキストの設定を最適化
+  ctx.imageSmoothingEnabled = false;
+  gtx.imageSmoothingEnabled = false;
   
-  // サイズが変わった場合のみ更新
-  if(waveCanvas.width !== newW || waveCanvas.height !== newH){
-    waveCanvas.width = newW;
-    waveCanvas.height = newH;
-    gridCanvas.width = newW;
-    gridCanvas.height = newH;
-    
-    pxPerMM = basePxPerMM * dpr;
-    W = newW;
-    H = newH;
-    baselineY = H * 0.6;
-    
-    // コンテキストの設定を最適化
-    ctx.imageSmoothingEnabled = false;
-    gtx.imageSmoothingEnabled = false;
-    
-    drawGrid();
-    lastDrawY = null;
-  }
+  drawGrid();
+  lastDrawY = null;
 }
 window.addEventListener('resize', resizeCanvas); setTimeout(resizeCanvas,0);
 
@@ -351,7 +342,28 @@ const RHY_JA = {
   ronT: 'R-on-T 現象'
 };
 function pick(){ const i=Math.floor(Math.random()*RHY_LIST.length); return RHY_LIST[i]; }
-function start(){ rhythm = pick(); rrSchedule = schedule(rhythm); nextRRIdx=0; phase=0; t=0; beatCounter=0; ronCounter=0; ronFlag=false; currentPR=160; wenckCount=0; wenckDropThisBeat=false; mobitzCount=0; mobitzDropThisBeat=false; updateCycle(); drawGrid(); lastDrawY=null; document.getElementById('ans').textContent=''; }
+function start(){ 
+  rhythm = pick(); 
+  rrSchedule = schedule(rhythm); 
+  nextRRIdx=0; 
+  phase=0; 
+  t=0; 
+  beatCounter=0; 
+  ronCounter=0; 
+  ronFlag=false; 
+  currentPR=160; 
+  wenckCount=0; 
+  wenckDropThisBeat=false; 
+  mobitzCount=0; 
+  mobitzDropThisBeat=false; 
+  updateCycle(); 
+  
+  // ECGキャンバスをクリア（背景は透明のまま）
+  ctx.clearRect(0, 0, W, H);
+  drawGrid(); 
+  lastDrawY=null; 
+  document.getElementById('ans').textContent=''; 
+}
 
 document.getElementById('reveal').addEventListener('click', ()=>{
   const ja = RHY_JA[rhythm] || rhythm;
