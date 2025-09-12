@@ -144,7 +144,7 @@ function gauss(x, mu, sigma, amp){ const z=(x-mu)/sigma; return amp*Math.exp(-0.
 function skewGauss(x, mu, sigmaL, sigmaR, amp){ const s=x<mu? sigmaL:sigmaR; const z=(x-mu)/s; return amp*Math.exp(-0.5*z*z); }
 function morphBasic(p, opts){
   const {pr=160, qrs=90, qt=380, pAmp=0.25, qAmp=-0.05, rAmp=1.0, sAmp=-0.15, tAmp=0.25, tSkew=1.3, uAmp=0.0} = opts;
-  let mv=0; mv += gauss(p, 40, 20, pAmp);
+  let mv=0; mv += skewGauss(p, 40, 25, 25, pAmp);
   const qrsScale = Math.max(0.8, (opts.qrs||90) / 90);
   mv += gauss(p, pr + qrs * 0.1, 10*qrsScale, qAmp);
   mv += gauss(p, pr + qrs * 0.35, 12*qrsScale, rAmp);
@@ -336,8 +336,8 @@ function morphValue(kind, p, drop = false) {
           currentPVCSign = (currentPVCSign === 1 ? -1 : 1);
         }
         const amp = (kind === 'pvc_multifocal' ? currentPVCSign : 1);
-        setSeg(0, 180, 480);
-        return amp * morphBasic(p, { pr: 0, qrs: 180, qt: 480, pAmp: 0.0, qAmp: -0.18, rAmp: 1.25, sAmp: -0.40, tAmp: 0.10 });
+        setSeg(0, 240, 520);
+        return amp * morphBasic(p, { pr: 0, qrs: 240, qt: 520, pAmp: 0.0, qAmp: -0.18, rAmp: 1.25, sAmp: -0.40, tAmp: 0.10 });
       } else {
         setSeg(160, 90, 400);
         return morphBasic(p, { pr: 160, qrs: 90, qt: 400, pAmp: 0.22, qAmp: -0.04, rAmp: 1.0, sAmp: -0.12, tAmp: 0.30, tSkew: 1.4 });
@@ -418,7 +418,8 @@ function scrollAndDraw(val){
   
   // 新しい点を描画
   const y = baselineY + mvToPx(applyLeadScaling(val, phase));
-  ctx.strokeStyle = '#22d3ee';
+  // テーマに基づいて色を設定
+  ctx.strokeStyle = document.body.classList.contains('light-mode') ? '#000000' : '#22d3ee';
   ctx.lineWidth = 2;
   
   if(lastDrawY !== null){
