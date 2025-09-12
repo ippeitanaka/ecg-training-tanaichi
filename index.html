@@ -248,8 +248,8 @@ function applyLeadScaling(val, p){
 let currentPR = 160;         // ms; used for rhythms with dynamic PR
 let wenckCount = 0;          // 0..(wenckLen-1)
 const wenckLen = 5;          // pattern: 4 conducted (PR漸延) + 1 drop
-const wenckPRstart = 160;    // starting PR
-const wenckPRstep = 40;      // PR prolongation per conducted beat
+const wenckPRstart = 140;    // starting PR (clear initial short PR)
+const wenckPRstep = 60;      // PR prolongation per conducted beat (clearer)
 let wenckDropThisBeat = false;
 
 let mobitzCount = 0;         // Mobitz II drop cadence
@@ -582,9 +582,9 @@ function updateCycle(){
   if(rhythm === 'wenckebach'){
     // Link RR to PR prolongation and dropped beats: slight shortening before drop, pause after drop
     const base = 800;
-    const shortBy = 20 * Math.max(0, Math.min(wenckCount, wenckLen-2));
+    const shortBy = 40 * Math.max(0, Math.min(wenckCount, wenckLen-2));
     if(wenckDropThisBeat){
-      cycleMs = base + 260 + (Math.random()*40-20); // pause after dropped beat (< 2*RR)
+      cycleMs = base + 300 + (Math.random()*40-20); // longer pause after drop for clarity
     } else {
       cycleMs = base - shortBy + (Math.random()*20-10);
     }

@@ -100,7 +100,7 @@ let t = 0; let lastTS = performance.now();
 let rhythm = 'sinus'; let rrSchedule = []; let phase = 0; let nextRRIdx=0; let currentRR = 800;
 let W = waveCanvas.width; let H = waveCanvas.height; let baselineY = H*0.6; let lastDrawY=null;
 let beatCounter=0; let ronCounter=0; let ronFlag=false;
-let currentPR = 160; let wenckCount=0; const wenckLen=5; const wenckPRstart=160; const wenckPRstep=40; let wenckDropThisBeat=false; let mobitzCount=0; const mobitzLen=3; let mobitzDropThisBeat=false;
+let currentPR = 160; let wenckCount=0; const wenckLen=5; const wenckPRstart=140; const wenckPRstep=60; let wenckDropThisBeat=false; let mobitzCount=0; const mobitzLen=3; let mobitzDropThisBeat=false;
 let currentPVCSign=1;
 // frame time accumulator for stable stepping
 let accMS = 0;
@@ -415,8 +415,8 @@ function schedule(kind){
 }
 function updateCycle(){
   if(rhythm === 'wenckebach'){
-    const base=800; const shortBy = 20 * Math.max(0, Math.min(wenckCount, 3));
-    if(wenckDropThisBeat){ currentRR = base + 260 + (Math.random()*40-20);} else { currentRR = base - shortBy + (Math.random()*20-10); }
+    const base=800; const shortBy = 40 * Math.max(0, Math.min(wenckCount, 3));
+    if(wenckDropThisBeat){ currentRR = base + 300 + (Math.random()*40-20);} else { currentRR = base - shortBy + (Math.random()*20-10); }
   } else if(rhythm === 'af' || rhythm === 'vf' || rrSchedule.length > 1){ currentRR = rrSchedule[nextRRIdx % rrSchedule.length]; nextRRIdx++; } else { currentRR = rrSchedule[0]; }
 }
 function shouldDrop(kind){ if(kind==='mobitz2'){ return mobitzDropThisBeat;} if(kind==='wenckebach'){ return wenckDropThisBeat;} if(kind==='chb') return false; return false; }
@@ -556,6 +556,7 @@ function start(){
   ctx.clearRect(0, 0, W, H);
   drawGrid(); 
   lastDrawY=null; 
+  if(rhythm === 'wenckebach'){ currentPR = wenckPRstart; }
   document.getElementById('ans').textContent=''; 
 }
 
