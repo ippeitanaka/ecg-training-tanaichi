@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>心電図テスト</title>
+<meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<style>
+  :root{
+    --bg:#0b1220; --panel:#111a2b; --ink:#e6edf3; --muted:#98a2b3; --accent:#5eead4; --warn:#f97316;
+    --grid-sm: rgba(255,255,255,0.06); --grid-lg: rgba(255,255,255,0.10);
+    --btn-bg:#17243b; --btn-bd:#27406a; --btn-ink:var(--ink);
+  }
+  html[data-theme="light"]{
+    --bg:#ffffff; --panel:#ffffff; --ink:#0b1220; --muted:#475569; --accent:#0ea5e9; --warn:#ea580c;
+    --grid-sm: rgba(234, 84, 98, 0.22);
+    --grid-lg: rgba(234, 84, 98, 0.45);
+    --btn-bg:#f8fafc; --btn-bd:#dbe3ea; --btn-ink:#0b1220;
+  }
+  html,body{height:100%; margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--ink); background:var(--bg);} 
+  html:not([data-theme="light"]) body, html:not([data-theme="light"]) { background:linear-gradient(180deg,#0a0f1b 0%, #0e1526 40%, #111827 100%);} 
+  .wrap{display:grid; grid-template-columns: 1fr; height:100%}
+  header{display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:var(--panel); border-bottom:1px solid #1f2b3f}
+  .btn{background:var(--btn-bg); color:var(--btn-ink); border:1px solid var(--btn-bd); padding:8px 12px; border-radius:10px; cursor:pointer; text-decoration:none; display:inline-block}
+  main{padding:16px}
+  #stage{position:relative; height:360px}
+  #stage canvas{position:absolute; left:0; top:0}
+  canvas{display:block; width:100%; height:340px; border-radius:12px; border:none; background:var(--bg)}
+  #gridCanvas{background:var(--bg); border:1px solid #253554;}
+  #ecgCanvas{background:transparent;}
+  .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+  .pill{display:inline-block; padding:4px 8px; border-radius:999px; background:#13223a; border:1px solid #20304f; font-size:12px; color:var(--muted)}
+  .answer{font-size:16px; color:var(--ink)}
+  footer.site-footer{ margin-top:8px; padding:12px 16px; background:var(--panel); border-top:1px solid #1f2b3f; color:var(--muted); font-size:12px; text-align:center }
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <a class="btn" href="index.html">← 戻る</a>
+  </div>
+  <div class="row">
+    <button class="btn" id="reveal">解答</button>
+    <button class="btn" id="next">次へ</button>
+  </div>
+</header>
+<main>
+  <div class="pill">ランダム出題: 現在の描画と同じ物理スケール（25mm/s・10mm/mV）</div>
+  <div id="stage">
+    <canvas id="gridCanvas" width="1200" height="340" aria-hidden="true"></canvas>
+    <canvas id="ecgCanvas" width="1200" height="340" role="img" aria-label="ECG 波形表示キャンバス">ECG 波形を表示するキャンバス</canvas>
+  </div>
+  <p class="answer" id="ans" aria-live="polite"></p>
+</main>
+<footer class="site-footer">© 2025 Toyo Medical College, Emergency Life-saving Technician Department, Ippei Tanaka</footer>
+<script>
+// Shared drawing parameters (copy minimal parts from index.html)
+let running = true;
+const waveCanvas = document.getElementById('ecgCanvas');
+const gridCanvas = document.getElementById('gridCanvas');
+const ctx = waveCanvas.getContext('2d');
+const gtx = gridCanvas.getContext('2d');
+let mmPerSec = 25; let mmPerMv = 10; const basePxPerMM = 4; let pxPerMM = basePxPerMM * (window.devicePixelRatio||1);
+let t = 0; let lastTS = performance.now();
+let rhythm = 'sinus'; let rrSchedule = []; let cycleMs = 800; let phase = 0; let nextRRIdx=0;
+let W = waveCanvas.width; let H = waveCanvas.height; let baselineY = H*0.6; let lastDrawY=null;
+let beatCounter=0; let ronCounter=0; let ronFlag=false;
+let currentPR = 160; let wenckCount=0; const wenckLen=5; const wenckPRstart=160; const wenckPRstep=40; let wenckDropThisBeat=false; let mobitzCount=0; const mobitzLen=3; let mobitzDropThisBeat=false;
+let currentPVCSign=1;
+
+// Lead scaling (follow selection from index page via localStorage)
+let lead = (()=>{ try{return localStorage.getItem('ecg.lead')||'II';}catch{return 'II';} })();
+const LEAD_COEFF = {
+  I:{p:0.7,qrs:0.7,t:0.6}, II:{p:1.0,qrs:1.0,t:1.0}, III:{p:0.85,qrs:0.85,t:0.9},
+  aVR:{p:-0.5,qrs:-0.6,t:-0.5}, aVL:{p:0.4,qrs:0.4,t:0.4}, aVF:{p:0.9,qrs:0.95,t:0.9},
+  V1:{p:0.3,qrs:-0.6,t:-0.3}, V2:{p:0.4,qrs:-0.4,t:-0.2}, V3:{p:0.5,qrs:0.1,t:0.2},
+  V4:{p:0.7,qrs:0.6,t:0.4}, V5:{p:0.8,qrs:0.9,t:0.6}, V6:{p:0.7,qrs:0.85,t:0.6}
+};
+let lastSeg = {pr:160,qrs:90,qt:400};
+function setSeg(pr,qrs,qt){ lastSeg = {pr,qrs,qt}; }
+function applyLeadScaling(val, p){
+  const c = LEAD_COEFF[lead] || LEAD_COEFF.II;
+  const pr = lastSeg.pr ?? 160; const qrs = lastSeg.qrs ?? 90; const qt = lastSeg.qt ?? 400;
+  const pEnd = Math.max(60, pr * 0.75);
+  const qrsEnd = pr + qrs;
+  const tEnd = pr + qt;
+  let s = c.t;
+  if(p < pEnd) s = c.p; else if(p < qrsEnd) s = c.qrs; else if(p < tEnd) s = c.t;
+  return val * s;
+}
+
+function msToPx(ms){ return (ms/1000)*mmPerSec * pxPerMM; }
+function mvToPx(mv){ return -mv*mmPerMv * pxPerMM; }
+function drawGrid(){
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg') || '#0b101a';
+  const sm = getComputedStyle(document.documentElement).getPropertyValue('--grid-sm') || 'rgba(255,255,255,0.06)';
+  const lg = getComputedStyle(document.documentElement).getPropertyValue('--grid-lg') || 'rgba(255,255,255,0.10)';
+  gtx.fillStyle = bg; gtx.fillRect(0,0,W,H);
+  gtx.lineWidth = 1; gtx.strokeStyle = sm;
+  for(let x=0; x<=W; x+=pxPerMM){ gtx.beginPath(); gtx.moveTo(x,0); gtx.lineTo(x,H); gtx.stroke(); }
+  for(let y=0; y<=H; y+=pxPerMM){ gtx.beginPath(); gtx.moveTo(0,y); gtx.lineTo(W,y); gtx.stroke(); }
+  gtx.strokeStyle = lg;
+  for(let x=0; x<=W; x+=pxPerMM*5){ gtx.beginPath(); gtx.moveTo(x,0); gtx.lineTo(x,H); gtx.stroke(); }
+  for(let y=0; y<=H; y+=pxPerMM*5){ gtx.beginPath(); gtx.moveTo(0,y); gtx.lineTo(W,y); gtx.stroke(); }
+}
+function gauss(x, mu, sigma, amp){ const z=(x-mu)/sigma; return amp*Math.exp(-0.5*z*z); }
+function skewGauss(x, mu, sigmaL, sigmaR, amp){ const s=x<mu? sigmaL:sigmaR; const z=(x-mu)/s; return amp*Math.exp(-0.5*z*z); }
+function morphBasic(p, opts){
+  const {pr=160, qrs=90, qt=380, pAmp=0.25, qAmp=-0.05, rAmp=1.0, sAmp=-0.15, tAmp=0.25, tSkew=1.3, uAmp=0.0} = opts;
+  let mv=0; mv += gauss(p, 40, 20, pAmp);
+  const qrsScale = Math.max(0.8, (opts.qrs||90) / 90);
+  mv += gauss(p, pr + qrs * 0.1, 10*qrsScale, qAmp);
+  mv += gauss(p, pr + qrs * 0.35, 12*qrsScale, rAmp);
+  mv += gauss(p, pr + qrs * 0.7, 10*qrsScale, sAmp);
+  const tDur = qt - qrs; const tCenter = pr + qrs + tDur * 0.5; const tSigma = tDur * 0.22;
+  mv += skewGauss(p, tCenter, tSigma * tSkew, tSigma / tSkew, tAmp);
+  if(uAmp){ const uCenter = tCenter + tDur * 0.55; mv += gauss(p, uCenter, tDur * 0.25, uAmp); }
+  return mv;
+}
+function morphValue(kind,p, drop=false){
+  switch(kind){
+    case 'sinus': setSeg(160,90,400); return morphBasic(p, {pr:160,qrs:90,qt:400,pAmp:0.22,qAmp:-0.04,rAmp:1.0,sAmp:-0.12,tAmp:0.30,tSkew:1.4,uAmp:0.03});
+    case 'avb1': { const basePR=220; const drift=30*Math.sin(2*Math.PI*((t%6000)/6000)); setSeg(basePR+drift,90,400); return morphBasic(p,{pr:basePR+drift,qrs:90,qt:400,pAmp:0.25,qAmp:-0.05,rAmp:1.0,sAmp:-0.12,tAmp:0.32}); }
+    case 'rbbb':{ setSeg(160,140,420); let mv = morphBasic(p,{pr:160,qrs:140,qt:420,pAmp:0.18,qAmp:-0.03,rAmp:0.9,sAmp:-0.04,tAmp:0.26,tSkew:1.5}); mv += gauss(p, 160+140-30, 10, 0.5); mv -= gauss(p, 160+140-45, 8, 0.08); return mv; }
+    case 'lbbb':{ setSeg(160,160,460); let mv = morphBasic(p,{pr:160,qrs:160,qt:460,pAmp:0.16,qAmp:0.0,rAmp:0.85,sAmp:-0.03,tAmp:0.22,tSkew:1.6}); mv += gauss(p,160+30,20,0.6); return mv; }
+    case 'psvt': setSeg(60,70,320); return morphBasic(p,{pr:60,qrs:70,qt:320,pAmp:0.04,qAmp:-0.05,rAmp:0.9,sAmp:-0.1,tAmp:0.22,tSkew:1.3});
+    case 'vt': setSeg(20,260,480); return morphBasic(p,{pr:20,qrs:260,qt:480,pAmp:0.0,qAmp:-0.18,rAmp:1.2,sAmp:-0.36,tAmp:0.05,tSkew:1.0});
+    case 'mobitz2': { if(drop){ setSeg(currentPR,0,320); return morphBasic(p,{pr:currentPR,qrs:0,qt:320,pAmp:0.25,qAmp:0,rAmp:0,sAmp:0,tAmp:0}); } setSeg(currentPR,90,380); return morphBasic(p,{pr:currentPR,qrs:90,qt:380,pAmp:0.25,qAmp:-0.05,rAmp:1.0,sAmp:-0.15,tAmp:0.30}); }
+    case 'wenckebach': { if(drop){ setSeg(currentPR,0,320); return morphBasic(p,{pr:currentPR,qrs:0,qt:320,pAmp:0.25,qAmp:0,rAmp:0,sAmp:0,tAmp:0}); } setSeg(currentPR,90,380); return morphBasic(p,{pr:currentPR,qrs:90,qt:380,pAmp:0.25,qAmp:-0.05,rAmp:1.0,sAmp:-0.15,tAmp:0.30}); }
+    case 'chb':{ const atrialCycle=750; const atrialP=gauss((t%atrialCycle),40,20,0.22); setSeg(0,180,500); const vent=morphBasic(p,{pr:0,qrs:180,qt:500,pAmp:0.0,qAmp:-0.12,rAmp:0.9,sAmp:-0.24,tAmp:0.06}); return atrialP+vent; }
+  case 'af':{ const f = 0.02*Math.sin(2*Math.PI*((t%400)/400)) +0.018*Math.sin(2*Math.PI*((t%250)/250)+0.7) +0.014*Math.sin(2*Math.PI*((t%180)/180)+1.1) +0.010*Math.sin(2*Math.PI*((t%120)/120)+2.0); setSeg(60,80,320); return f + morphBasic(p,{pr:60,qrs:80,qt:320,pAmp:0.0,qAmp:-0.05,rAmp:1.0,sAmp:-0.15,tAmp:0.22,tSkew:1.3}); }
+    case 'vf':{ setSeg(0, cycleMs*0.5, cycleMs*0.9); let mv=0; for(let i=1;i<=6;i++){ const freq=7+Math.random()*5; mv += 0.12*Math.sin(2*Math.PI*(t/1000*freq)+i*0.8);} return mv; }
+    case 'afl':{ setSeg(100,80,360); const base = morphBasic(p,{pr:100,qrs:80,qt:360,pAmp:0.0,qAmp:-0.05,rAmp:1.0,sAmp:-0.12,tAmp:0.20}); const period=200; const pos=p%period; const rise=Math.min(1,pos/(period*0.8)); const fall = pos>=period*0.8? (1-(pos-period*0.8)/(period*0.2)) : 1; const fWave=0.22*(rise*fall); return base+fWave; }
+    case 'wpw':{ const pr=90, qrs=120, qt=410; setSeg(pr,qrs,qt); let mv=morphBasic(p,{pr,qrs,qt,pAmp:0.18,qAmp:-0.02,rAmp:0.95,sAmp:-0.10,tAmp:0.26,tSkew:1.3}); mv += skewGauss(p, pr + qrs*0.10, 36, 18, 0.28); return mv; }
+    case 'earlyRepol':{ const pr=160,qrs=90,qt=400; setSeg(pr,qrs,qt); let mv=morphBasic(p,{pr,qrs,qt,pAmp:0.20,qAmp:-0.03,rAmp:0.95,sAmp:-0.10,tAmp:0.38,tSkew:1.5}); mv += gauss(p, pr+qrs+6, 8, 0.15); const tStart=pr+qrs; if(p>tStart && p<tStart+120){ mv += 0.08*(1-(p-tStart)/120);} return mv; }
+    case 'stElevation':{ const pr=160,qrs=90,qt=400; setSeg(pr,qrs,qt); let mv=morphBasic(p,{pr,qrs,qt,pAmp:0.18,qAmp:-0.03,rAmp:0.95,sAmp:0.02,tAmp:0.26,tSkew:1.2}); const stStart=pr+qrs; if(p>stStart && p<stStart+160){ mv += 0.22*(1-Math.pow((p-stStart)/160,0.7)); } return mv; }
+    case 'stDepression':{ const pr=160,qrs=90,qt=380; setSeg(pr,qrs,qt); let mv=morphBasic(p,{pr,qrs,qt,pAmp:0.18,qAmp:-0.04,rAmp:0.95,sAmp:-0.10,tAmp:-0.08,tSkew:1.2}); const stStart=pr+qrs; if(p>stStart && p<stStart+160){ mv -= 0.15; } return mv; }
+    case 'hypoK':{ const pr=180,qrs=90,qt=420; setSeg(pr,qrs,qt); let mv=morphBasic(p,{pr,qrs,qt,pAmp:0.18,qAmp:-0.04,rAmp:0.95,sAmp:-0.10,tAmp:0.06,uAmp:-0.14,tSkew:1.2}); const stStart=pr+qrs; if(p>stStart && p<stStart+180){ mv -= 0.08; } return mv; }
+    case 'hyperK': setSeg(140,120,380); return morphBasic(p,{pr:140,qrs:120,qt:380,pAmp:0.05,qAmp:-0.02,rAmp:0.85,sAmp:-0.10,tAmp:0.55,tSkew:1.0});
+    case 'qtcLong': setSeg(160,90,520); return morphBasic(p,{pr:160,qrs:90,qt:520,pAmp:0.18,qAmp:-0.04,rAmp:0.95,sAmp:-0.10,tAmp:0.28,uAmp:0.04,tSkew:1.5});
+    case 'qtcShort': setSeg(160,90,300); return morphBasic(p,{pr:160,qrs:90,qt:300,pAmp:0.18,qAmp:-0.04,rAmp:0.95,sAmp:-0.10,tAmp:0.36,tSkew:1.1});
+    case 'torsades':{ setSeg(0,260,520); const base=morphBasic(p,{pr:0,qrs:260,qt:520,pAmp:0.0,qAmp:-0.30,rAmp:1.25,sAmp:-0.48,tAmp:0.10}); const env=0.55+0.45*Math.sin(2*Math.PI*((t%3500)/3500)); const sign = Math.sign(Math.sin(2*Math.PI*((t%7000)/7000)))||1; return base*env*sign; }
+    case 'pvc_single':
+    case 'pvc_frequent':
+    case 'pvc_multifocal':
+  case 'shortRun':{ const isPVC = cycleMs < 800; if(isPVC){ if(kind==='pvc_multifocal' && p<1){ currentPVCSign=(currentPVCSign===1?-1:1);} const amp=(kind==='pvc_multifocal'? currentPVCSign:1); setSeg(0,180,480); return amp*morphBasic(p,{pr:0,qrs:180,qt:480,pAmp:0.0,qAmp:-0.18,rAmp:1.25,sAmp:-0.40,tAmp:0.10}); } else { setSeg(160,90,400); return morphBasic(p,{pr:160,qrs:90,qt:400,pAmp:0.22,qAmp:-0.04,rAmp:1.0,sAmp:-0.12,tAmp:0.30,tSkew:1.4}); } }
+  case 'ronT':{ setSeg(160,90,400); let mv=morphBasic(p,{pr:160,qrs:90,qt:400,pAmp:0.22,qAmp:-0.04,rAmp:1.0,sAmp:-0.12,tAmp:0.30,tSkew:1.4}); if(ronFlag){ const qrsOnset=160; const tStart=qrsOnset+90; const start=tStart+70; const width=180; if(p>=start && p<=start+width){ setSeg(0,180,480); mv += morphBasic(p-start,{pr:0,qrs:180,qt:480,pAmp:0.0,qAmp:-0.18,rAmp:1.25,sAmp:-0.40,tAmp:0.10}); } } return mv; }
+    default: return morphBasic(p,{});
+  }
+}
+function schedule(kind){
+  switch(kind){
+    case 'sinus': return [800]; case 'avb1': return [900]; case 'rbbb': return [800]; case 'lbbb': return [800]; case 'psvt': return [300]; case 'vt': return [450]; case 'af': return Array.from({length:6},()=> 500 + Math.random()*500); case 'mobitz2': return [800]; case 'wenckebach': return [800]; case 'chb': return [1000]; case 'vf': return Array.from({length:6},()=> 250 + Math.random()*250); case 'afl': return [400]; case 'torsades': return [500]; case 'wpw': return [800]; case 'earlyRepol': return [800]; case 'stElevation': return [800]; case 'stDepression': return [800]; case 'hypoK': return [900]; case 'hyperK': return [800]; case 'qtcLong': return [900]; case 'qtcShort': return [700]; case 'pvc_single':{ const base=800; const jitter=()=> (Math.random()*30-15); return [base+jitter(), base+jitter(), base+jitter(), 600+jitter(), 1000+jitter(), base+jitter()]; } case 'pvc_frequent':{ const jitter=()=> (Math.random()*30-15); return [800+jitter(), 600+jitter(), 1000+jitter(), 800+jitter(), 600+jitter(), 1000+jitter()]; } case 'pvc_multifocal':{ const jitter=()=> (Math.random()*40-20); return [820+jitter(), 580+jitter(), 1040+jitter(), 790+jitter(), 610+jitter(), 980+jitter()]; } case 'shortRun': return [780,520,500,500,520,780]; case 'ronT': return [800]; default: return [800];
+  }
+}
+function updateCycle(){
+  if(rhythm === 'wenckebach'){
+    const base=800; const shortBy = 20 * Math.max(0, Math.min(wenckCount, 3));
+    if(wenckDropThisBeat){ cycleMs = base + 260 + (Math.random()*40-20);} else { cycleMs = base - shortBy + (Math.random()*20-10); }
+  } else if(rhythm === 'af' || rhythm === 'vf' || rrSchedule.length > 1){ cycleMs = rrSchedule[nextRRIdx % rrSchedule.length]; nextRRIdx++; } else { cycleMs = rrSchedule[0]; }
+}
+function shouldDrop(kind){ if(kind==='mobitz2'){ return mobitzDropThisBeat;} if(kind==='wenckebach'){ return wenckDropThisBeat;} if(kind==='chb') return false; return false; }
+function scrollAndDraw(val){ const img=ctx.getImageData(1,0,W-1,H); ctx.putImageData(img,0,0); ctx.clearRect(W-1,0,1,H); const y=baselineY + mvToPx(applyLeadScaling(val, phase)); ctx.strokeStyle='#5eead4'; ctx.lineWidth=2; ctx.lineCap='round'; ctx.lineJoin='round'; if(lastDrawY==null){ lastDrawY=y;} ctx.beginPath(); ctx.moveTo(W-2,lastDrawY); ctx.lineTo(W-1,y); ctx.stroke(); lastDrawY=y; }
+function animate(ts){ if(!running){ requestAnimationFrame(animate); return;} let dt=ts-lastTS; lastTS=ts; const msPerPix = 1000*(1/pxPerMM)/mmPerSec; let acc=dt; while(acc>0){ const drop=shouldDrop(rhythm); const v=morphValue(rhythm, phase, drop); scrollAndDraw(v); const step=msPerPix; t+=step; phase+=step; acc-=step; if(phase>=cycleMs){ phase-=cycleMs; beatCounter++; if(rhythm==='ronT'){ ronCounter++; ronFlag=(ronCounter%6)===(5);} else { ronFlag=false;} if(rhythm==='wenckebach'){ wenckCount=(wenckCount+1)%5; if(wenckCount===4){ wenckDropThisBeat=true; currentPR=wenckPRstart;} else { wenckDropThisBeat=false; currentPR=wenckPRstart + wenckPRstep * wenckCount; } } else { wenckDropThisBeat=false;} if(rhythm==='mobitz2'){ mobitzCount=(mobitzCount+1)%3; mobitzDropThisBeat=(mobitzCount===2); currentPR=200;} else { mobitzDropThisBeat=false;} updateCycle(); }} requestAnimationFrame(animate); }
+function resizeCanvas(){ const dpr=window.devicePixelRatio||1; const rect=waveCanvas.getBoundingClientRect(); const cssW=Math.max(600,Math.floor(rect.width)); const cssH=Math.floor(rect.height); waveCanvas.width=Math.floor(cssW*dpr); waveCanvas.height=Math.floor(cssH*dpr); gridCanvas.width=waveCanvas.width; gridCanvas.height=waveCanvas.height; pxPerMM=basePxPerMM*dpr; W=waveCanvas.width; H=waveCanvas.height; baselineY=H*0.6; drawGrid(); lastDrawY=null; }
+window.addEventListener('resize', resizeCanvas); setTimeout(resizeCanvas,0);
+
+// Quiz logic
+const RHY_LIST = ['sinus','avb1','rbbb','lbbb','psvt','vt','mobitz2','wenckebach','chb','af','vf','afl','wpw','earlyRepol','stElevation','stDepression','hypoK','hyperK','qtcLong','qtcShort','torsades','pvc_single','pvc_frequent','pvc_multifocal','shortRun','ronT'];
+const RHY_JA = {
+  sinus: '洞調律',
+  avb1: '房室ブロック（I度）',
+  rbbb: '右脚ブロック',
+  lbbb: '左脚ブロック',
+  psvt: '発作性上室頻拍',
+  vt: '心室頻拍',
+  mobitz2: '房室ブロック（Mobitz II）',
+  wenckebach: '房室ブロック（Wenckebach / Mobitz I）',
+  chb: '完全房室ブロック',
+  af: '心房細動',
+  vf: '心室細動',
+  afl: '心房粗動',
+  wpw: 'WPW症候群',
+  earlyRepol: '早期再分極',
+  stElevation: 'ST上昇',
+  stDepression: 'ST低下',
+  hypoK: '低カリウム血症',
+  hyperK: '高カリウム血症',
+  qtcLong: 'QT延長',
+  qtcShort: 'QT短縮',
+  torsades: 'トルサード・ド・ポワン（多形性心室頻拍）',
+  pvc_single: '期外収縮（単発）',
+  pvc_frequent: '期外収縮（頻発）',
+  pvc_multifocal: '多源性期外収縮',
+  shortRun: '短いVTラン',
+  ronT: 'R-on-T 現象'
+};
+function pick(){ const i=Math.floor(Math.random()*RHY_LIST.length); return RHY_LIST[i]; }
+function start(){ rhythm = pick(); rrSchedule = schedule(rhythm); nextRRIdx=0; phase=0; t=0; beatCounter=0; ronCounter=0; ronFlag=false; currentPR=160; wenckCount=0; wenckDropThisBeat=false; mobitzCount=0; mobitzDropThisBeat=false; updateCycle(); drawGrid(); lastDrawY=null; document.getElementById('ans').textContent=''; }
+
+document.getElementById('reveal').addEventListener('click', ()=>{
+  const ja = RHY_JA[rhythm] || rhythm;
+  // PVCの定義表示（単発は60分で30未満）を補足
+  let extra = '';
+  if(rhythm === 'pvc_single'){
+    extra = ' — 60分で30個未満（単発PVCの目安）';
+  } else if(rhythm === 'pvc_frequent'){
+    extra = ' — 頻発（例：二段脈など、単発の基準を超える）';
+  }
+  document.getElementById('ans').textContent = `解答: ${ja}（${rhythm}）${extra}`;
+});
+
+document.getElementById('next').addEventListener('click', ()=> start());
+
+// theme sync with index.html
+(function initTheme(){ const saved=(()=>{ try{return localStorage.getItem('ecg.theme');}catch{return null;}})(); if(saved){ document.documentElement.setAttribute('data-theme', saved);} })();
+
+start();
+requestAnimationFrame((ts)=>{ lastTS=ts; requestAnimationFrame(animate); });
+</script>
+</body>
+</html>

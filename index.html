@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>心電図インタラクティブ学習ページ（改良版）</title>
+<meta name="description" content="ECG Trainer: 25 mm/s・10 mm/mV の実寸グリッドで心電図波形をインタラクティブに学べます。多数の不整脈パターン、速度・感度調整、PNG保存、キーボード操作に対応。">
+<meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="ECG Trainer – 心電図インタラクティブ学習">
+<meta property="og:description" content="実寸グリッドで滑らかな波形表示。多数のリズムを切替え学習できます。">
+<meta property="og:type" content="website">
+<style>
+  :root{
+    --bg:#0b1220; --panel:#111a2b; --ink:#e6edf3; --muted:#98a2b3; --accent:#5eead4; --warn:#f97316;
+    --grid-sm: rgba(255,255,255,0.06); --grid-lg: rgba(255,255,255,0.10);
+    --btn-bg:#17243b; --btn-bd:#27406a; --btn-ink:var(--ink);
+  }
+  html[data-theme="light"]{
+    /* ECG記録紙風（ライトテーマ） */
+    --bg:#ffffff; --panel:#ffffff; --ink:#0b1220; --muted:#475569; --accent:#0ea5e9; --warn:#ea580c;
+    /* 1mm薄線、5mm濃線。ピンク系で視認性を高める */
+    --grid-sm: rgba(234, 84, 98, 0.22);
+    --grid-lg: rgba(234, 84, 98, 0.45);
+    --btn-bg:#f8fafc; --btn-bd:#dbe3ea; --btn-ink:#0b1220;
+  }
+  /* 背景はテーマ変数に合わせる。ダーク時のみグラデーションを重ねる */
+  html,body{height:100%; margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:var(--ink); background:var(--bg);} 
+  html:not([data-theme="light"]) body, html:not([data-theme="light"]) { background:linear-gradient(180deg,#0a0f1b 0%, #0e1526 40%, #111827 100%);} 
+  .wrap{display:grid; grid-template-columns: 340px 1fr; gap:16px; height:100%}
+  aside{background:var(--panel); border-right:1px solid #1f2b3f; padding:18px; overflow:auto}
+  main{padding:18px; overflow:auto}
+  h1{font-size:24px; margin:0 0 8px}
+  h2{font-size:18px; margin:16px 0 8px}
+  p{line-height:1.7}
+  .card{background:rgba(255,255,255,0.03); border:1px solid #22304a; border-radius:14px; padding:14px; box-shadow:0 8px 30px rgba(0,0,0,.35)}
+  .btn{background:var(--btn-bg); color:var(--btn-ink); border:1px solid var(--btn-bd); padding:8px 12px; border-radius:10px; cursor:pointer}
+  .btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .row{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+  .row-between{justify-content:space-between}
+  .align-end{align-items:end}
+  .mt-8{margin-top:8px}
+  .pill{display:inline-block; padding:4px 8px; border-radius:999px; background:#13223a; border:1px solid #20304f; font-size:12px; color:var(--muted)}
+  .kbd{font-family: ui-monospace, SFMono-Regular, Menlo, monospace; padding:2px 6px; border:1px solid #2a3b5c; background:#101a2b; border-radius:6px; font-size:12px}
+  #stage{position:relative; height:340px}
+  /* Stack grid and waveform canvases */
+  #stage canvas{position:absolute; left:0; top:0}
+  canvas{display:block; width:100%; height:320px; border-radius:12px; border:none; background:var(--bg)}
+  #gridCanvas{background:var(--bg); border:1px solid #253554;}
+  #ecgCanvas{background:transparent;}
+  /* caliper UI removed per user request */
+  #speed{width:100%}
+  .grid-note{color:var(--muted); font-size:12px}
+  /* Rhythm explanation should look like normal body text */
+  #rhythmInfo{ font-size:16px; color:var(--ink); font-weight:400; line-height:1.7 }
+  .qrs-toggle{gap:6px}
+  .prewrap{white-space:pre-wrap}
+  .h2-tight{margin:0}
+  .sr-only{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0}
+  .toolbar{display:flex; gap:8px; align-items:center}
+  .theme-toggle{background:transparent; border:1px solid var(--btn-bd); padding:6px 10px; border-radius:999px; transform: translateY(-4px)}
+  .toolbar .test-link{ transform: translateY(-6px); }
+  footer.site-footer{ margin-top:8px; padding:12px 16px; background:var(--panel); border-top:1px solid #1f2b3f; color:var(--muted); font-size:12px; text-align:center }
+  @media (max-width: 900px){
+    .wrap{grid-template-columns: 1fr}
+    aside{border-right:none; border-bottom:1px solid #1f2b3f}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <aside aria-label="コントロールパネル">
+    <div class="row row-between">
+  <h1>東洋医療専門学校　ECG Trainer</h1>
+      <div class="toolbar">
+        <button id="themeToggle" class="theme-toggle" title="テーマ切替（ライト/ダーク）" aria-pressed="false">🌙</button>
+        <a class="btn test-link" href="test.html" title="ランダム心電図クイズへ">心電図テスト</a>
+      </div>
+    </div>
+    
+    <div class="card">
+      <h2 id="rhythmLegend">リズム選択</h2>
+      <fieldset aria-labelledby="rhythmLegend">
+        <legend class="sr-only">リズム選択</legend>
+        <label><input type="radio" name="rhythm" value="sinus" checked> 洞調律（70/min 前後）</label><br>
+        <label><input type="radio" name="rhythm" value="af"> 心房細動（AF）</label><br>
+        <label><input type="radio" name="rhythm" value="afl"> 心房粗動（AFL）</label><br>
+        <label><input type="radio" name="rhythm" value="psvt"> 発作性上室頻拍（PSVT）</label><br>
+        <label><input type="radio" name="rhythm" value="vt"> 心室頻拍（VT）</label><br>
+        <label><input type="radio" name="rhythm" value="torsades"> トルサードポアンツ（TdP）</label><br>
+        <label><input type="radio" name="rhythm" value="vf"> 心室細動（VF）</label><br>
+        <label><input type="radio" name="rhythm" value="wpw"> WPW症候群（デルタ波）</label><br>
+        <label><input type="radio" name="rhythm" value="earlyRepol"> 早期再分極</label><br>
+        <label><input type="radio" name="rhythm" value="stElevation"> ST上昇</label><br>
+        <label><input type="radio" name="rhythm" value="stDepression"> ST低下</label><br>
+        <label><input type="radio" name="rhythm" value="hypoK"> 低カリウム血症</label><br>
+        <label><input type="radio" name="rhythm" value="hyperK"> 高カリウム血症</label><br>
+        <label><input type="radio" name="rhythm" value="qtcLong"> QT延長</label><br>
+        <label><input type="radio" name="rhythm" value="qtcShort"> QT短縮</label><br>
+        <label><input type="radio" name="rhythm" value="rbbb"> 右脚ブロック（RBBB）</label><br>
+        <label><input type="radio" name="rhythm" value="lbbb"> 左脚ブロック（LBBB）</label><br>
+        <label><input type="radio" name="rhythm" value="avb1"> 1度房室ブロック</label><br>
+        <label><input type="radio" name="rhythm" value="wenckebach"> 2度房室ブロック（Wenckebach）</label><br>
+        <label><input type="radio" name="rhythm" value="mobitz2"> 2度房室ブロック（Mobitz II）</label><br>
+        <label><input type="radio" name="rhythm" value="chb"> 完全房室ブロック</label><br>
+        <label><input type="radio" name="rhythm" value="pvc_single"> 単発性期外収縮</label><br>
+        <label><input type="radio" name="rhythm" value="pvc_frequent"> 多発性期外収縮（bigeminy）</label><br>
+        <label><input type="radio" name="rhythm" value="pvc_multifocal"> 多源性期外収縮</label><br>
+        <label><input type="radio" name="rhythm" value="shortRun"> ショートラン（NSVT）</label><br>
+        <label><input type="radio" name="rhythm" value="ronT"> RonT現象</label>
+      </fieldset>
+    </div>
+    <div class="card">
+      <h2>紙送り・感度</h2>
+      <div class="row">
+        <label for="speed" class="pill">速度</label>
+        <input id="speed" type="range" min="10" max="50" value="25" aria-label="紙送り速度">
+        <span id="speedLbl">25</span> mm/s
+      </div>
+      <div class="row">
+        <label for="gain" class="pill">感度</label>
+        <input id="gain" type="range" min="5" max="20" value="10" aria-label="感度">
+        <span id="gainLbl">10</span> mm/mV
+      </div>
+      <div class="row">
+        <label for="leadSel" class="pill">誘導</label>
+        <select id="leadSel" aria-label="誘導選択">
+          <option value="II" selected>II</option>
+          <option value="I">I</option>
+          <option value="III">III</option>
+          <option value="aVR">aVR</option>
+          <option value="aVL">aVL</option>
+          <option value="aVF">aVF</option>
+          <option value="V1">V1</option>
+          <option value="V2">V2</option>
+          <option value="V3">V3</option>
+          <option value="V4">V4</option>
+          <option value="V5">V5</option>
+          <option value="V6">V6</option>
+        </select>
+      </div>
+      <p class="grid-note">大マス=5 mm（200 ms / 0.5 mV）、小マス=1 mm（40 ms / 0.1 mV）</p>
+  <p class="grid-note">ショートカット: <span class="kbd">Space</span> 再生/停止・<span class="kbd">R</span> リセット・<span class="kbd">S</span> PNG保存・<span class="kbd">[</span>/<span class="kbd">]</span> 速度・<span class="kbd">-</span>/<span class="kbd">+</span> 感度</p>
+    </div>
+    
+  </aside>
+  <main>
+    <section class="card">
+      <div class="row row-between align-end">
+        <h2 class="h2-tight">アニメーション波形（Lead II 相当）</h2>
+        <div>心拍数: <span id="hr" aria-live="polite" aria-atomic="true">—</span> /min</div>
+      </div>
+      <div id="stage">
+  <!-- Grid and Wave canvases -->
+  <canvas id="gridCanvas" width="1200" height="320" aria-hidden="true"></canvas>
+  <canvas id="ecgCanvas" width="1200" height="320" role="img" aria-label="ECG 波形表示キャンバス">ECG 波形を表示するキャンバス</canvas>
+      </div>
+  <div class="row row-between mt-8">
+        <button class="btn" id="pause" aria-pressed="true">⏯ 再生/一時停止</button>
+        <button class="btn" id="reset">↺ リセット</button>
+  <button class="btn" id="savePng" title="キャンバスを画像保存">🖼 PNG保存</button>
+  
+      </div>
+    </section>
+    <!-- moved from sidebar: 学習メモ & リズム解説をECGの下へ配置（順序を「リズム解説 → 学習メモ」に変更） -->
+    <section class="card">
+      <h2>リズム解説</h2>
+      <div id="rhythmInfo" class="grid-note prewrap" aria-live="polite" aria-atomic="true"></div>
+    </section>
+    <section class="card">
+      <h2>学習メモ</h2>
+      <ul>
+        <li>P → PR → QRS → ST/T → QTc の順でチェック</li>
+        <li>QRS幅 ≥120 ms で bundle branch block や心室起源を考える</li>
+        <li>規則性 × QRS幅 × Pの関係 で頻脈を鑑別</li>
+      </ul>
+      <p class="grid-note">方眼は25 mm/s・10 mm/mV基準で描画されています。</p>
+    </section>
+  </main>
+</div>
+<script>
+// ======= ECG Drawing Logic (Canvas scroll) =======
+let running = true;
+const waveCanvas = document.getElementById('ecgCanvas');
+const gridCanvas = document.getElementById('gridCanvas');
+const ctx = waveCanvas.getContext && waveCanvas.getContext('2d');
+const gtx = gridCanvas.getContext && gridCanvas.getContext('2d');
+if(!ctx){
+  alert('お使いのブラウザではCanvasが有効ではありません。最新のブラウザをご利用ください。');
+}
+let mmPerSec = 25;     // speed 25 mm/s
+let mmPerMv = 10;      // gain 10 mm/mV
+const basePxPerMM = 4; // 1 mm = 4 CSS pixels
+let pxPerMM = basePxPerMM * (window.devicePixelRatio || 1); // device px
+let t = 0;             // elapsed ms
+let lastTS = performance.now();
+let rhythm = 'sinus';
+let rrSchedule = [];
+let cycleMs = 800;
+let phase = 0;
+// Solid ECG line rendering state
+let lastDrawY = null;
+
+// Additional state for complex rhythms
+let beatCounter = 0;           // counts the number of completed beats
+let currentPVCSign = 1;        // sign multiplier for multifocal PVCs
+let ronCounter = 0;            // counter for RonT cycles
+const ronInterval = 6;         // interval of beats between R-on-T events
+let ronFlag = false;           // indicates if current cycle should include an R-on-T overlay
+let nextRRIdx = 0;
+let W = waveCanvas.width;   // device px
+let H = waveCanvas.height;  // device px
+let baselineY = H*0.6;
+// Lead selection and phase segmentation for P/QRS/T scaling
+let lead = 'II';
+let lastSeg = {pr:160, qrs:90, qt:400};
+const LEAD_COEFF = {
+  I:{p:0.7,qrs:0.7,t:0.6}, II:{p:1.0,qrs:1.0,t:1.0}, III:{p:0.85,qrs:0.85,t:0.9},
+  aVR:{p:-0.5,qrs:-0.6,t:-0.5}, aVL:{p:0.4,qrs:0.4,t:0.4}, aVF:{p:0.9,qrs:0.95,t:0.9},
+  V1:{p:0.3,qrs:-0.6,t:-0.3}, V2:{p:0.4,qrs:-0.4,t:-0.2}, V3:{p:0.5,qrs:0.1,t:0.2},
+  V4:{p:0.7,qrs:0.6,t:0.4}, V5:{p:0.8,qrs:0.9,t:0.6}, V6:{p:0.7,qrs:0.85,t:0.6}
+};
+function setSeg(pr,qrs,qt){ lastSeg = {pr, qrs, qt}; }
+function applyLeadScaling(val, p){
+  const coeff = LEAD_COEFF[lead] || LEAD_COEFF.II;
+  const pr = lastSeg.pr ?? 160; const qrs = lastSeg.qrs ?? 90; const qt = lastSeg.qt ?? 400;
+  const pEnd = Math.max(60, pr * 0.75);
+  const qrsEnd = pr + qrs;
+  const tEnd = pr + qt;
+  let scale = coeff.t;
+  if(p < pEnd) scale = coeff.p;
+  else if(p < qrsEnd) scale = coeff.qrs;
+  else if(p < tEnd) scale = coeff.t;
+  return val * scale;
+}
+
+// Beat-level dynamic state (e.g., Wenckebach/Mobitz)
+let currentPR = 160;         // ms; used for rhythms with dynamic PR
+let wenckCount = 0;          // 0..(wenckLen-1)
+const wenckLen = 5;          // pattern: 4 conducted (PR漸延) + 1 drop
+const wenckPRstart = 160;    // starting PR
+const wenckPRstep = 40;      // PR prolongation per conducted beat
+let wenckDropThisBeat = false;
+
+let mobitzCount = 0;         // Mobitz II drop cadence
+const mobitzLen = 3;         // 2 conducted : 1 drop
+let mobitzDropThisBeat = false;
+
+function msToPx(ms){ return (ms/1000)*mmPerSec * pxPerMM; }
+function mvToPx(mv){ return -mv*mmPerMv * pxPerMM; }
+function drawGrid(){
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg') || '#0b101a';
+  const sm = getComputedStyle(document.documentElement).getPropertyValue('--grid-sm') || 'rgba(255,255,255,0.06)';
+  const lg = getComputedStyle(document.documentElement).getPropertyValue('--grid-lg') || 'rgba(255,255,255,0.10)';
+  gtx.fillStyle = bg; gtx.fillRect(0,0,W,H);
+  gtx.lineWidth = 1;
+  gtx.strokeStyle = sm;
+  for(let x=0; x<=W; x+=pxPerMM){ gtx.beginPath(); gtx.moveTo(x,0); gtx.lineTo(x,H); gtx.stroke(); }
+  for(let y=0; y<=H; y+=pxPerMM){ gtx.beginPath(); gtx.moveTo(0,y); gtx.lineTo(W,y); gtx.stroke(); }
+  gtx.strokeStyle = lg;
+  for(let x=0; x<=W; x+=pxPerMM*5){ gtx.beginPath(); gtx.moveTo(x,0); gtx.lineTo(x,H); gtx.stroke(); }
+  for(let y=0; y<=H; y+=pxPerMM*5){ gtx.beginPath(); gtx.moveTo(0,y); gtx.lineTo(W,y); gtx.stroke(); }
+}
+
+// morphological functions referencing typical ECG metrics
+// Gaussian helper to produce smooth waveforms
+function gauss(x, mu, sigma, amp){
+  const z = (x - mu) / sigma;
+  return amp * Math.exp(-0.5 * z * z);
+}
+
+// Asymmetric Gaussian: different sigma for left/right sides to shape T波の左右非対称
+function skewGauss(x, mu, sigmaL, sigmaR, amp){
+  const sigma = x < mu ? sigmaL : sigmaR;
+  const z = (x - mu) / sigma;
+  return amp * Math.exp(-0.5 * z * z);
+}
+
+/**
+ * Generate a single heartbeat morphology using sums of Gaussians.
+ *
+ * Parameters:
+ *  pr  – PR interval (ms) from P onset to QRS onset
+ *  qrs – QRS duration (ms)
+ *  qt  – QT interval (ms) from QRS onset to end of T wave
+ *  pAmp/qAmp/rAmp/sAmp/tAmp – amplitudes (mV) of the P, Q, R, S and T components
+ *
+ * Returns a millivolt value at a given phase p (0 ≤ p < cycle length).
+ */
+function morphBasic(p, opts){
+  const {pr=160, qrs=90, qt=380, pAmp=0.25, qAmp=-0.05, rAmp=1.0, sAmp=-0.15, tAmp=0.25, tSkew=1.3, uAmp=0.0} = opts;
+  let mv=0;
+  // P wave – small positive deflection; centre at 40 ms with σ≈20 ms
+  mv += gauss(p, 40, 20, pAmp);
+  // Q wave – small negative deflection at onset of QRS; centre slightly after PR onset
+  const qrsScale = Math.max(0.8, qrs / 90);
+  mv += gauss(p, pr + qrs * 0.1, 10 * qrsScale, qAmp);
+  // R wave – tall positive deflection; centre mid‑QRS
+  mv += gauss(p, pr + qrs * 0.35, 12 * qrsScale, rAmp);
+  // S wave – small negative deflection towards end of QRS
+  mv += gauss(p, pr + qrs * 0.7, 10 * qrsScale, sAmp);
+  // T wave – broad, rounded wave after QRS; centre halfway through T interval
+  const tDur = qt - qrs;
+  const tCenter = pr + qrs + tDur * 0.5;
+  const tSigma = tDur * 0.22;
+  // skewed T for more physiological look (slow return)
+  mv += skewGauss(p, tCenter, tSigma * tSkew, tSigma / tSkew, tAmp);
+  // Optional U wave: small slow positive deflection after T
+  if(uAmp){
+    const uCenter = tCenter + tDur * 0.55;
+    mv += gauss(p, uCenter, tDur * 0.25, uAmp);
+  }
+  return mv;
+}
+// arrhythmia-specific morphological modifications
+// drop: when true, represent non-conducted beat (P present but no QRS/T)
+function morphValue(kind,p, drop=false){
+  switch(kind){
+  case 'sinus': setSeg(160,90,400); return morphBasic(p, {pr:160,qrs:90,qt:400,pAmp:0.22,qAmp:-0.04,rAmp:1.0,sAmp:-0.12,tAmp:0.30,tSkew:1.4,uAmp:0.03});
+    case 'avb1': {
+      const basePR = 220;
+      const drift = 30 * Math.sin(2*Math.PI*((t%6000)/6000));
+      setSeg(basePR + drift, 90, 400);
+      return morphBasic(p, {pr: basePR + drift, qrs:90, qt:400, pAmp:0.25, qAmp:-0.05, rAmp:1.0, sAmp:-0.12, tAmp:0.32});
+    }
+    case 'rbbb':{
+      // Wide QRS (140ms) with RSR' pattern: add second R at end; attenuate S amplitude
+      setSeg(160,140,420);
+      let mv = morphBasic(p, {pr:160,qrs:140,qt:420,pAmp:0.18,qAmp:-0.03,rAmp:0.9,sAmp:-0.04,tAmp:0.26,tSkew:1.5});
+      // R' bump at late QRS
+      // Add late R' bump for right bundle branch block
+      mv += gauss(p, 160 + 140 - 30, 10, 0.5);
+      // subtle notching just before R'
+      mv -= gauss(p, 160 + 140 - 45, 8, 0.08);
+      return mv;
+    }
+    case 'lbbb':{
+      // Wide notched R, absence of Q; negative S slight; T inversion suppressed
+  setSeg(160,160,460);
+  let mv = morphBasic(p, {pr:160,qrs:160,qt:460,pAmp:0.16,qAmp:0.0,rAmp:0.85,sAmp:-0.03,tAmp:0.22,tSkew:1.6});
+      // Broader R plateau
+      // Add broad plateau at early QRS to simulate notched R in left bundle branch block
+      mv += gauss(p,160 + 30,20,0.6);
+      return mv;
+    }
+    case 'psvt':{
+      // Narrow QRS, rapid HR; P often hidden; approximate as QRS only
+      setSeg(60,70,320);
+      return morphBasic(p,{pr:60,qrs:70,qt:320,pAmp:0.04,qAmp:-0.05,rAmp:0.9,sAmp:-0.1,tAmp:0.22,tSkew:1.3});
+    }
+    case 'vt':{
+      setSeg(20,260,480);
+      return morphBasic(p,{pr:20,qrs:260,qt:480,pAmp:0.0,qAmp:-0.18,rAmp:1.2,sAmp:-0.36,tAmp:0.05,tSkew:1.0});
+    }
+    case 'mobitz2': {
+      if(drop){ setSeg(currentPR,0,320); return morphBasic(p,{pr:currentPR,qrs:0,qt:320,pAmp:0.25,qAmp:0,rAmp:0,sAmp:0,tAmp:0}); }
+      setSeg(currentPR,90,380);
+      return morphBasic(p,{pr:currentPR,qrs:90,qt:380,pAmp:0.25,qAmp:-0.05,rAmp:1.0,sAmp:-0.15,tAmp:0.30});
+    }
+    case 'wenckebach':{
+      if(drop){ setSeg(currentPR,0,320); return morphBasic(p,{pr:currentPR,qrs:0,qt:320,pAmp:0.25,qAmp:0,rAmp:0,sAmp:0,tAmp:0}); }
+      setSeg(currentPR,90,380);
+      return morphBasic(p,{pr:currentPR,qrs:90,qt:380,pAmp:0.25,qAmp:-0.05,rAmp:1.0,sAmp:-0.15,tAmp:0.30});
+    }
+    case 'chb':{
+      const atrialCycle = 750; // ~80 bpm
+      const atrialP = gauss((t%atrialCycle), 40, 20, 0.22);
+      setSeg(0,180,500);
+      const vent = morphBasic(p,{pr:0,qrs:180,qt:500,pAmp:0.0,qAmp:-0.12,rAmp:0.9,sAmp:-0.24,tAmp:0.06});
+      return atrialP + vent;
+    }
+    case 'af':{
+      // Add fibrillatory baseline noise and irregular small waves; plus occasional narrow QRS
+      // Baseline: multiple small harmonics with slowly drifting phases (use global time t)
+      const f = 0.02*Math.sin(2*Math.PI*((t%400)/400))
+               +0.018*Math.sin(2*Math.PI*((t%250)/250) + 0.7)
+               +0.014*Math.sin(2*Math.PI*((t%180)/180) + 1.1)
+               +0.010*Math.sin(2*Math.PI*((t%120)/120) + 2.0);
+      setSeg(60,80,320);
+      return f + morphBasic(p,{pr:60,qrs:80,qt:320,pAmp:0.0,qAmp:-0.05,rAmp:1.0,sAmp:-0.15,tAmp:0.22,tSkew:1.3});
+    }
+    case 'vf':{
+      // Chaotic: slower and larger for legibility
+      setSeg(0, cycleMs*0.5, cycleMs*0.9);
+      let mv=0;
+      for(let i=1;i<=6;i++){
+        const freq = 7 + Math.random()*5;
+        mv += 0.12*Math.sin(2*Math.PI*(t/1000*freq) + i*0.8);
+      }
+      return mv;
+    }
+    case 'afl':{
+      // Atrial flutter: sawtooth F waves ~300 bpm with 2:1 conduction; sharpened asymmetry
+      setSeg(100,80,360);
+      const base = morphBasic(p,{pr:100,qrs:80,qt:360,pAmp:0.0,qAmp:-0.05,rAmp:1.0,sAmp:-0.12,tAmp:0.20});
+      const period = 200; // ms (~300/min)
+      const pos = p % period;
+      // Sawtooth: slow rise then sharp drop
+      const rise = Math.min(1, pos/(period*0.8));
+      const fall = pos >= period*0.8 ? (1 - (pos - period*0.8)/(period*0.2)) : 1;
+      const fWave = 0.22 * (rise * fall);
+      return base + fWave;
+    }
+    case 'wpw':{
+      // Short PR with delta wave (slurred upstroke) and potentially wider QRS
+      const pr = 90; const qrs = 120; const qt = 410;
+      setSeg(pr,qrs,qt);
+      let mv = morphBasic(p,{pr,qrs,qt,pAmp:0.18,qAmp:-0.02,rAmp:0.95,sAmp:-0.10,tAmp:0.26,tSkew:1.3});
+      // Delta wave: stronger, slower initial upstroke after P end
+      mv += skewGauss(p, pr + qrs*0.10, 36, 18, 0.28);
+      return mv;
+    }
+    case 'earlyRepol':{
+      // Normal PR/QRS with J-point notch and concave ST elevation, tall T
+      const pr=160,qrs=90,qt=400;
+      setSeg(pr,qrs,qt);
+      let mv = morphBasic(p,{pr,qrs,qt,pAmp:0.20,qAmp:-0.03,rAmp:0.95,sAmp:-0.10,tAmp:0.38,tSkew:1.5});
+      // J-notch at QRS end
+      mv += gauss(p, pr + qrs + 6, 8, 0.15);
+      // Concave ST elevation (gentle offset before T)
+      const tStart = pr + qrs;
+      if(p > tStart && p < tStart + 120){ mv += 0.08 * (1 - (p - tStart)/120); }
+      return mv;
+    }
+    case 'stElevation':{
+      // ST elevation with convexity, S above baseline
+      const pr=160,qrs=90,qt=400;
+      setSeg(pr,qrs,qt);
+      let mv = morphBasic(p,{pr,qrs,qt,pAmp:0.18,qAmp:-0.03,rAmp:0.95,sAmp:0.02,tAmp:0.26,tSkew:1.2});
+      const stStart = pr + qrs;
+      if(p > stStart && p < stStart + 160){ mv += 0.22 * (1 - Math.pow((p - stStart)/160, 0.7)); }
+      return mv;
+    }
+    case 'stDepression':{
+      // Horizontal/downsloping ST depression, flattened or inverted T
+      const pr=160,qrs=90,qt=380;
+      setSeg(pr,qrs,qt);
+      let mv = morphBasic(p,{pr,qrs,qt,pAmp:0.18,qAmp:-0.04,rAmp:0.95,sAmp:-0.10,tAmp:-0.08,tSkew:1.2});
+      const stStart = pr + qrs;
+      if(p > stStart && p < stStart + 160){ mv -= 0.15; }
+      return mv;
+    }
+    case 'hypoK':{
+      // Hypokalemia: ST depression, flattened T, negative U per request
+      const pr=180,qrs=90,qt=420;
+      setSeg(pr,qrs,qt);
+      let mv = morphBasic(p,{pr,qrs,qt,pAmp:0.18,qAmp:-0.04,rAmp:0.95,sAmp:-0.10,tAmp:0.06,uAmp:-0.14,tSkew:1.2});
+      const stStart = pr + qrs;
+      if(p > stStart && p < stStart + 180){ mv -= 0.08; }
+      return mv;
+    }
+    case 'hyperK':{
+      // Hyperkalemia: tall peaked T, small/absent P, QRS widening (moderate)
+      const pr=140,qrs=120,qt=380;
+      setSeg(pr,qrs,qt);
+      return morphBasic(p,{pr,qrs,qt,pAmp:0.05,qAmp:-0.02,rAmp:0.85,sAmp:-0.10,tAmp:0.55,tSkew:1.0});
+    }
+    case 'qtcLong':{
+      // QT prolongation
+      const pr=160,qrs=90,qt=520;
+      setSeg(pr,qrs,qt);
+      return morphBasic(p,{pr,qrs,qt,pAmp:0.18,qAmp:-0.04,rAmp:0.95,sAmp:-0.10,tAmp:0.28,uAmp:0.04,tSkew:1.5});
+    }
+    case 'qtcShort':{
+      // QT shortening with sharper T
+      const pr=160,qrs=90,qt=300;
+      setSeg(pr,qrs,qt);
+      return morphBasic(p,{pr,qrs,qt,pAmp:0.18,qAmp:-0.04,rAmp:0.95,sAmp:-0.10,tAmp:0.36,tSkew:1.1});
+    }
+    case 'torsades':{
+      // Torsades de pointes: polymorphic VT with twisting QRS amplitude around the baseline
+      // Use a wide QRS and modulate amplitude and axis over a multi-second envelope
+      // Base waveform with wide QRS and modest repolarisation; amplify to emphasise polymorphic nature
+  setSeg(0,260,520);
+  const base = morphBasic(p,{pr:0,qrs:260,qt:520,pAmp:0.0,qAmp:-0.30,rAmp:1.25,sAmp:-0.48,tAmp:0.10});
+      // Envelope varies slowly (~3 s) to produce waxing and waning amplitude
+  const env = 0.55 + 0.45 * Math.sin(2 * Math.PI * ((t % 3500) / 3500));
+  // Alternate polarity over ~7 s to simulate axis rotation
+  const sign = Math.sign(Math.sin(2 * Math.PI * ((t % 7000) / 7000))) || 1;
+      return base * env * sign;
+    }
+    case 'pvc_single':
+    case 'pvc_frequent':
+    case 'pvc_multifocal':
+    case 'shortRun':{
+      // PVC variants: use schedule to determine if current cycle is a PVC (cycleMs < 800)
+      const isPVC = cycleMs < 800;
+      if(isPVC){
+        // multifocal PVCs have varying polarity; assign at start of cycle
+  if(kind === 'pvc_multifocal' && p < 1){ currentPVCSign = (currentPVCSign===1 ? -1 : 1); }
+  const amp = (kind === 'pvc_multifocal' ? currentPVCSign : 1);
+  setSeg(0,180,480);
+  return amp * morphBasic(p,{pr:0,qrs:180,qt:480,pAmp:0.0,qAmp:-0.18,rAmp:1.25,sAmp:-0.40,tAmp:0.10});
+      } else {
+        // normal beat
+        setSeg(160,90,400);
+        return morphBasic(p,{pr:160,qrs:90,qt:400,pAmp:0.22,qAmp:-0.04,rAmp:1.0,sAmp:-0.12,tAmp:0.30,tSkew:1.4});
+      }
+    }
+    case 'ronT':{
+      // R-on-T phenomenon: place PVC on T wave
+      setSeg(160,90,400);
+      let mv = morphBasic(p,{pr:160,qrs:90,qt:400,pAmp:0.22,qAmp:-0.04,rAmp:1.0,sAmp:-0.12,tAmp:0.30,tSkew:1.4});
+      if(ronFlag){
+        const qrsOnset = 160; // ms (PR)
+        const tStart = qrsOnset + 90;
+        const start = tStart + 70; // on T upslope
+        const width = 180;
+        if(p >= start && p <= start + width){
+          // overlay PVC; use PVC segmentation for scaling
+          setSeg(0,180,480);
+          mv += morphBasic(p - start,{pr:0,qrs:180,qt:480,pAmp:0.0,qAmp:-0.18,rAmp:1.25,sAmp:-0.40,tAmp:0.10});
+        }
+      }
+      return mv;
+    }
+    default: return morphBasic(p, {});
+  }
+}
+
+// RR schedule (ms) per rhythm
+function schedule(kind){
+  switch(kind){
+    case 'sinus': return [800];
+    case 'avb1': return [900];
+    case 'rbbb': return [800];
+    case 'lbbb': return [800];
+    case 'psvt': return [300];
+    case 'vt': return [450];
+    case 'af': return Array.from({length:6},()=> 500 + Math.random()*500);
+    case 'mobitz2': return [800];
+    case 'wenckebach': return [800];
+    case 'chb': return [1000];
+  case 'vf': return Array.from({length:6},()=> 250 + Math.random()*250);
+    case 'afl': return [400];
+    case 'torsades': return [500];
+    case 'wpw': return [800];
+    case 'earlyRepol': return [800];
+    case 'stElevation': return [800];
+    case 'stDepression': return [800];
+    case 'hypoK': return [900];
+    case 'hyperK': return [800];
+    case 'qtcLong': return [900];
+    case 'qtcShort': return [700];
+    case 'pvc_single':{
+      // 1つのPVC：数拍洞調律→早期結合（600ms）→代償休止（~1000ms）
+      const base = 800;
+      const jitter = () => (Math.random()*30-15);
+      return [base+jitter(), base+jitter(), base+jitter(), 600+jitter(), 1000+jitter(), base+jitter()];
+    }
+    case 'pvc_frequent':{
+      // 二段脈（bigeminy）近傍：洞拍→結合→代償休止の繰り返し
+      const jitter = () => (Math.random()*30-15);
+      return [800+jitter(), 600+jitter(), 1000+jitter(), 800+jitter(), 600+jitter(), 1000+jitter()];
+    }
+    case 'pvc_multifocal':{
+      // 結合間隔と代償休止に軽いバラツキ、形も後で極性反転
+      const jitter = () => (Math.random()*40-20);
+      return [820+jitter(), 580+jitter(), 1040+jitter(), 790+jitter(), 610+jitter(), 980+jitter()];
+    }
+  case 'shortRun': return [780,520,500,500,520,780];
+    case 'ronT': return [800];
+    default: return [800];
+  }
+}
+function updateCycle(){
+  // Advance to next cycle in the schedule. If the rhythm uses a repeating pattern
+  // (i.e. rrSchedule length > 1), step through the array; otherwise repeat the first value.
+  if(rhythm === 'wenckebach'){
+    // Link RR to PR prolongation and dropped beats: slight shortening before drop, pause after drop
+    const base = 800;
+    const shortBy = 20 * Math.max(0, Math.min(wenckCount, wenckLen-2));
+    if(wenckDropThisBeat){
+      cycleMs = base + 260 + (Math.random()*40-20); // pause after dropped beat (< 2*RR)
+    } else {
+      cycleMs = base - shortBy + (Math.random()*20-10);
+    }
+  }
+  else if(rhythm === 'af' || rhythm === 'vf' || rrSchedule.length > 1){
+    cycleMs = rrSchedule[nextRRIdx % rrSchedule.length];
+    nextRRIdx++;
+  } else {
+    cycleMs = rrSchedule[0];
+  }
+}
+
+function shouldDrop(kind){
+  if(kind==='mobitz2'){
+    return mobitzDropThisBeat;
+  }
+  if(kind==='wenckebach'){
+    return wenckDropThisBeat;
+  }
+  if(kind==='chb') return false;
+  return false;
+}
+
+function scrollAndDraw(val){
+  // shift left by 1px
+  const img = ctx.getImageData(1,0,W-1,H);
+  ctx.putImageData(img, 0,0);
+  // clear rightmost line
+  ctx.clearRect(W-1,0,1,H);
+  // draw point
+  const y = baselineY + mvToPx(val);
+  // solid line segment between previous and current sample
+  ctx.strokeStyle = '#5eead4';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  if(lastDrawY == null){ lastDrawY = y; }
+  ctx.beginPath();
+  ctx.moveTo(W-2, lastDrawY);
+  ctx.lineTo(W-1, y);
+  ctx.stroke();
+  lastDrawY = y;
+}
+
+function animate(ts){
+  if(!running){ requestAnimationFrame(animate); return; }
+  let dt = ts - lastTS; lastTS = ts;
+  const msPerPix = 1000*(1/pxPerMM)/mmPerSec;
+  let acc = dt;
+  while(acc > 0){
+    // update sample and draw
+    const drop = shouldDrop(rhythm);
+  const v = morphValue(rhythm, phase, drop);
+  const vl = applyLeadScaling(v, phase);
+  scrollAndDraw(vl);
+    const step = msPerPix;
+    t += step; phase += step; acc -= step;
+    if(phase >= cycleMs){
+      phase -= cycleMs;
+      // A beat has completed
+      beatCounter++;
+      // Determine whether upcoming cycle should include an R-on-T event
+      if(rhythm === 'ronT'){
+        ronCounter++;
+        ronFlag = (ronCounter % ronInterval) === (ronInterval - 1);
+      } else {
+        ronFlag = false;
+      }
+
+      // Update beat-level conduction patterns
+      if(rhythm === 'wenckebach'){
+        // pattern: 4 conducted with progressive PR, then a dropped beat
+        wenckCount = (wenckCount + 1) % wenckLen;
+        if(wenckCount === wenckLen - 1){
+          wenckDropThisBeat = true;
+          currentPR = wenckPRstart; // reset for next conducted cycle
+        } else {
+          wenckDropThisBeat = false;
+          currentPR = wenckPRstart + wenckPRstep * wenckCount;
+        }
+      } else {
+        wenckDropThisBeat = false;
+      }
+
+      if(rhythm === 'mobitz2'){
+        // pattern: conduct, conduct, drop, repeat (fixed PR)
+        mobitzCount = (mobitzCount + 1) % mobitzLen;
+        mobitzDropThisBeat = (mobitzCount === mobitzLen - 1);
+        currentPR = 200;
+      } else {
+        mobitzDropThisBeat = false;
+      }
+
+      updateCycle();
+    }
+  }
+  requestAnimationFrame(animate);
+}
+
+// init
+function init(){
+  drawGrid();
+  rrSchedule = schedule(rhythm);
+  updateCycle();
+  phase = 0; t = 0; lastTS = performance.now();
+  beatCounter = 0;
+  ronCounter = 0;
+  ronFlag = false;
+  // reset AV block states
+  currentPR = 160; wenckCount = 0; wenckDropThisBeat = false; mobitzCount = 0; mobitzDropThisBeat = false;
+  // reflect play state to button
+  const pauseBtn = document.getElementById('pause');
+  if(pauseBtn){ pauseBtn.setAttribute('aria-pressed', String(running)); }
+  lastDrawY = null;
+}
+init();
+requestAnimationFrame((ts)=>{ lastTS=ts; requestAnimationFrame(animate); });
+
+// High-DPI and responsive canvas sizing
+function resizeCanvas(){
+  const dpr = window.devicePixelRatio || 1;
+  const rect = waveCanvas.getBoundingClientRect();
+  const cssW = Math.max(600, Math.floor(rect.width));
+  const cssH = Math.floor(rect.height);
+  waveCanvas.width = Math.floor(cssW * dpr);
+  waveCanvas.height = Math.floor(cssH * dpr);
+  gridCanvas.width = Math.floor(cssW * dpr);
+  gridCanvas.height = Math.floor(cssH * dpr);
+  pxPerMM = basePxPerMM * dpr;
+  W = waveCanvas.width; H = waveCanvas.height; baselineY = H * 0.6;
+  drawGrid();
+  lastDrawY = null;
+}
+window.addEventListener('resize', resizeCanvas);
+// initial fit after styles applied
+setTimeout(resizeCanvas, 0);
+
+// UI bindings
+const radios = document.querySelectorAll('input[name="rhythm"]');
+radios.forEach(r=> r.addEventListener('change', ()=>{
+  rhythm = r.value;
+  // persist
+  try{ localStorage.setItem('ecg.r', rhythm); }catch{}
+  rrSchedule = schedule(rhythm);
+  nextRRIdx = 0;
+  // reset counters and flags for new rhythm
+  beatCounter = 0;
+  ronCounter = 0;
+  ronFlag = false;
+  updateCycle();
+  phase = 0;
+  t = 0;
+  drawGrid();
+  // update info panel
+  updateRhythmInfo();
+  lastDrawY = null;
+}));
+
+document.getElementById('pause').addEventListener('click', ()=>{ 
+  running = !running; 
+  const btn = document.getElementById('pause');
+  if(btn){ btn.setAttribute('aria-pressed', String(running)); }
+  if(running) lastTS = performance.now(); 
+});
+
+document.getElementById('reset').addEventListener('click', ()=>{
+  drawGrid();
+  phase = 0;
+  t = 0;
+  beatCounter = 0;
+  ronCounter = 0;
+  ronFlag = false;
+  currentPR = 160; wenckCount = 0; wenckDropThisBeat = false; mobitzCount = 0; mobitzDropThisBeat = false;
+  // reset controls to defaults
+  const speedEl = document.getElementById('speed');
+  const gainEl = document.getElementById('gain');
+  if(speedEl){ speedEl.value = '25'; mmPerSec = 25; document.getElementById('speedLbl').textContent = '25'; try{ localStorage.setItem('ecg.v', '25'); }catch{} }
+  if(gainEl){ gainEl.value = '10'; mmPerMv = 10; document.getElementById('gainLbl').textContent = '10'; try{ localStorage.setItem('ecg.g', '10'); }catch{} }
+  lastDrawY = null;
+});
+
+document.getElementById('speed').addEventListener('input', (e)=>{ mmPerSec = +e.target.value; document.getElementById('speedLbl').textContent = mmPerSec; try{ localStorage.setItem('ecg.v', String(mmPerSec)); }catch{} });
+
+document.getElementById('gain').addEventListener('input', (e)=>{ mmPerMv = +e.target.value; document.getElementById('gainLbl').textContent = mmPerMv; try{ localStorage.setItem('ecg.g', String(mmPerMv)); }catch{} });
+
+// Lead selector
+const leadSel = document.getElementById('leadSel');
+leadSel?.addEventListener('change', ()=>{ lead = leadSel.value; try{ localStorage.setItem('ecg.lead', lead); }catch{} });
+
+// caliper functionality removed; no interactive measurement tool
+
+// HR display update with moving average of last N RR
+const rrHistory = [];
+const rrAvgLen = 5;
+setInterval(()=>{
+  rrHistory.push(cycleMs);
+  if(rrHistory.length > rrAvgLen) rrHistory.shift();
+  const avg = rrHistory.reduce((a,b)=>a+b,0)/rrHistory.length;
+  const bpm = Math.round(60000 / avg);
+  document.getElementById('hr').textContent = isFinite(bpm)? bpm: '—';
+}, 300);
+
+// Save PNG
+document.getElementById('savePng').addEventListener('click', ()=>{
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  const tctx = tmp.getContext('2d');
+  tctx.drawImage(gridCanvas, 0, 0);
+  tctx.drawImage(waveCanvas, 0, 0);
+  const url = tmp.toDataURL('image/png');
+  const a = document.createElement('a');
+  a.href = url; a.download = 'ecg.png'; a.click();
+});
+
+// R-wave detection removed per request
+
+// Rhythm explanations
+const RHY_THUMBS = {
+  sinus: {
+    title: '洞調律',
+    text: '正常の電気伝導。洞結節→心房→房室結節→His-Purkinje系→心室へと順序良く伝導します。規則的なP波、一定のPR、狭いQRS、同方向のTが特徴です。'
+  },
+  avb1: {
+    title: '1度房室ブロック',
+    text: '房室結節の遅延でPR間隔が全拍で延長。ただし全て伝導し、QRSは狭いまま。機序はAV結節での伝導遅延。'
+  },
+  wenckebach: {
+    title: '2度房室ブロック（Wenckebach・Mobitz I）',
+    text: 'PRが拍毎に漸増し、ついに1拍脱落（ドロップ）。その後PRは短くリセット。機序はAV結節レベルの疲弊性伝導。'
+  },
+  mobitz2: {
+    title: '2度房室ブロック（Mobitz II）',
+    text: 'PRは一定のまま突然QRSが脱落。機序はHis束以下（脚ブロック領域）での伝導障害で、予後上重視。QRSは広いことも。'
+  },
+  chb: {
+    title: '完全房室ブロック',
+    text: '心房と心室が解離。心房は洞調律、心室は補充調律（徐拍・広いQRS）で自律。PとQRSの関係消失。機序はAV結節/下位の完全遮断。'
+  },
+  rbbb: {
+    title: '右脚ブロック（RBBB）',
+    text: '右脚の伝導遅延で心室中隔→左室→最後に右室が興奮。QRSは広く、末梢でR’（二峰性）を示します（誘導依存）。'
+  },
+  lbbb: {
+    title: '左脚ブロック（LBBB）',
+    text: '左脚の伝導遅延で右室→左室の順に興奮。QRSは広く、ノッチ/プラトー、二次性ST-T変化（discordant）を伴います。'
+  },
+  psvt: {
+    title: '発作性上室頻拍（PSVT）',
+    text: '房室結節リエントリー等により狭いQRSで急速・規則的。PはQRSに埋没/逆行性となることがあります。'
+  },
+  vt: {
+    title: '心室頻拍（VT）',
+    text: '心室起源の規則的頻拍。QRSは広く単形/多形。房室解離や捕捉/融合拍が所見。機序は瘢痕部リエントリー等。'
+  },
+  torsades: {
+    title: 'トルサード・ド・ポワンツ（TdP）',
+    text: '多形性VTの一種でQRS振幅が基線周りにねじれるように変動。先行QT延長が背景。早期後脱分極が機序。'
+  },
+  vf: {
+    title: '心室細動（VF）',
+    text: '心室が無秩序に細動し拍出不能。不規則で無方向性の高頻度活動。直ちに除細動が必要。'
+  },
+  af: {
+    title: '心房細動（AF）',
+    text: '心房が微細な無秩序興奮で収縮せず。RRは完全不規則、f波が基線の揺れとして現れます。AV結節の不規則伝導が機序。'
+  },
+  afl: {
+    title: '心房粗動（AFL）',
+    text: '心房マクロリエントリーで鋸歯状F波（~300/min）。伝導比（2:1等）で心室レートが決まります。'
+  },
+  wpw: {
+    title: 'WPW症候群（デルタ波）',
+    text: '副伝導路（Kent束）を介した心室早期興奮。短PRとQRS初期のなだらかな立ち上がり（デルタ波）が特徴。リエントリー頻拍の基盤となり得ます。'
+  },
+  earlyRepol: {
+    title: '早期再分極',
+    text: '健常若年男性などに多い生理的所見。J点上昇やノッチ、上向き凹状のST上昇と高いT波。虚血性ST上昇との鑑別が重要。'
+  },
+  stElevation: {
+    title: 'ST上昇',
+    text: '急性冠症候群・心膜炎・早期再分極などで見られる。凸型や広範囲の上昇は虚血を示唆しうるため要注意（臨床文脈で評価）。'
+  },
+  stDepression: {
+    title: 'ST低下',
+    text: '心筋虚血・負荷時変化・二次性変化など。水平/下降傾斜のST低下は虚血の可能性。T波平坦化/陰転を伴うことあり。'
+  },
+  hypoK: {
+    title: '低カリウム血症',
+    text: 'ST低下、T波平坦化、U波増高が特徴。期外収縮やトルサードのリスク上昇。補正と原因検索が必要。'
+  },
+  hyperK: {
+    title: '高カリウム血症',
+    text: '尖鋭なテント状T波、PR延長、P波減高/消失、QRS延長～洞停止/心静止へ移行し得る。緊急対応が必要。'
+  },
+  qtcLong: {
+    title: 'QT延長',
+    text: '先天性/後天性要因（薬剤・電解質異常）でQTが延長。早期後脱分極→TdPのリスク。心拍補正QTcで評価。'
+  },
+  qtcShort: {
+    title: 'QT短縮',
+    text: '先天性短QT症候群や高Ca血症などで観察。T波が尖鋭・間隔短縮。上室/心室性不整脈リスクに留意。'
+  },
+  pvc_single: {
+    title: '心室期外収縮（単発）',
+    text: '早期の心室起源拍で広いQRS。結滞（結合間隔短縮）と代償性休止が見られます。'
+  },
+  pvc_frequent: {
+    title: '頻発PVC（例：二段脈）',
+    text: '洞調律にPVCが交互に混在（二段脈）。代償性休止により等間隔に見えることも。'
+  },
+  pvc_multifocal: {
+    title: '多源性PVC',
+    text: '形の異なるPVCが複数焦点から発生。極性・形態が拍ごとに変わります。'
+  },
+  shortRun: {
+    title: 'ショートラン（非持続性VT）',
+    text: '数拍のVTが連発して自然停止。基礎リズムに短いVTエピソードが挿入されます。'
+  },
+  ronT: {
+    title: 'R-on-T現象',
+    text: 'T波上の早期心室性期外収縮。脆弱期への刺激で致死性不整脈を誘発しうるため要注意。'
+  }
+};
+
+function updateRhythmInfo(){
+  const info = RHY_THUMBS[rhythm];
+  const el = document.getElementById('rhythmInfo');
+  if(!el) return;
+  if(info){
+    el.innerText = `【${info.title}】\n${info.text}`;
+  } else {
+    el.innerText = '';
+  }
+}
+
+// init info once
+updateRhythmInfo();
+
+// Theme toggle + persistence
+const themeBtn = document.getElementById('themeToggle');
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme);
+  try{ localStorage.setItem('ecg.theme', theme); }catch{}
+  if(themeBtn){ themeBtn.textContent = theme === 'light' ? '☀︎' : '🌙'; themeBtn.setAttribute('aria-pressed', theme === 'light' ? 'true' : 'false'); }
+  drawGrid();
+}
+const savedTheme = (()=>{ try{ return localStorage.getItem('ecg.theme'); }catch{ return null; } })();
+if(savedTheme){ applyTheme(savedTheme); }
+themeBtn?.addEventListener('click', ()=>{
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(current === 'light' ? 'dark' : 'light');
+});
+
+// Restore saved controls
+try{
+  const sv = localStorage.getItem('ecg.v');
+  const sg = localStorage.getItem('ecg.g');
+  const sr = localStorage.getItem('ecg.r');
+  const sLead = localStorage.getItem('ecg.lead');
+  if(sv){ mmPerSec = +sv; const el=document.getElementById('speed'); if(el){ el.value = sv; document.getElementById('speedLbl').textContent = sv; } }
+  if(sg){ mmPerMv = +sg; const el=document.getElementById('gain'); if(el){ el.value = sg; document.getElementById('gainLbl').textContent = sg; } }
+  if(sr){ rhythm = sr; const r = document.querySelector(`input[name="rhythm"][value="${sr}"]`); if(r){ r.checked = true; } rrSchedule = schedule(rhythm); updateRhythmInfo(); }
+  if(sLead){ lead = sLead; const el = document.getElementById('leadSel'); if(el){ el.value = sLead; } }
+}catch{}
+
+// Keyboard shortcuts
+window.addEventListener('keydown', (e)=>{
+  if(e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  switch(e.key){
+    case ' ': e.preventDefault(); document.getElementById('pause').click(); break;
+    case 'r': case 'R': document.getElementById('reset').click(); break;
+    case 's': case 'S': document.getElementById('savePng').click(); break;
+    case '[': mmPerSec = Math.max(10, mmPerSec - 1); document.getElementById('speed').value = String(mmPerSec); document.getElementById('speedLbl').textContent = String(mmPerSec); try{ localStorage.setItem('ecg.v', String(mmPerSec)); }catch{} break;
+    case ']': mmPerSec = Math.min(50, mmPerSec + 1); document.getElementById('speed').value = String(mmPerSec); document.getElementById('speedLbl').textContent = String(mmPerSec); try{ localStorage.setItem('ecg.v', String(mmPerSec)); }catch{} break;
+    case '-': mmPerMv = Math.max(5, mmPerMv - 1); document.getElementById('gain').value = String(mmPerMv); document.getElementById('gainLbl').textContent = String(mmPerMv); try{ localStorage.setItem('ecg.g', String(mmPerMv)); }catch{} break;
+    case '+': case '=': mmPerMv = Math.min(20, mmPerMv + 1); document.getElementById('gain').value = String(mmPerMv); document.getElementById('gainLbl').textContent = String(mmPerMv); try{ localStorage.setItem('ecg.g', String(mmPerMv)); }catch{} break;
+    case 't': case 'T': themeBtn?.click(); break;
+  }
+});
+
+// Pause animation when tab not visible
+let wasRunning = true;
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){ wasRunning = running; running = false; const btn=document.getElementById('pause'); if(btn){ btn.setAttribute('aria-pressed','false'); } }
+  else { running = wasRunning; const btn=document.getElementById('pause'); if(btn){ btn.setAttribute('aria-pressed', String(running)); } if(running) lastTS = performance.now(); }
+});
+</script>
+<footer class="site-footer">© 2025 Toyo Medical College, Emergency Life-saving Technician Department, Ippei Tanaka</footer>
+</body>
+</html>
