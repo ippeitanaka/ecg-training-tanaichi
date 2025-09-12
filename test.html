@@ -102,6 +102,8 @@ let W = waveCanvas.width; let H = waveCanvas.height; let baselineY = H*0.6; let 
 let beatCounter=0; let ronCounter=0; let ronFlag=false;
 let currentPR = 160; let wenckCount=0; const wenckLen=5; const wenckPRstart=160; const wenckPRstep=40; let wenckDropThisBeat=false; let mobitzCount=0; const mobitzLen=3; let mobitzDropThisBeat=false;
 let currentPVCSign=1;
+// frame time accumulator for stable stepping
+let accMS = 0;
 
 // Lead scaling - independent of main page
 let lead = 'II';
@@ -417,90 +419,67 @@ function updateCycle(){
   } else if(rhythm === 'af' || rhythm === 'vf' || rrSchedule.length > 1){ currentRR = rrSchedule[nextRRIdx % rrSchedule.length]; nextRRIdx++; } else { currentRR = rrSchedule[0]; }
 }
 function shouldDrop(kind){ if(kind==='mobitz2'){ return mobitzDropThisBeat;} if(kind==='wenckebach'){ return wenckDropThisBeat;} if(kind==='chb') return false; return false; }
-function scrollAndDraw(val){
-  // 二層Canvas: gridCanvasは固定、ecgCanvasのみスクロール
+function animate(ts){
+  if(!running){ requestAnimationFrame(animate); return; }
+
+  const msPerPix = 1000 * (1/pxPerMM) / mmPerSec;
+  const MAX_STEPS = 32; // cap to avoid long frames
+  let dt = ts - lastTS; lastTS = ts; accMS += dt;
+
+  // enough time accumulated?
+  const steps = Math.min(MAX_STEPS, Math.floor(accMS / msPerPix));
+  if(steps <= 0){ requestAnimationFrame(animate); return; }
+  accMS -= steps * msPerPix;
+
+  // Scroll once by 'steps'
   ctx.globalCompositeOperation = 'copy';
-  ctx.drawImage(waveCanvas, -1, 0);
+  ctx.drawImage(waveCanvas, -steps, 0);
   ctx.globalCompositeOperation = 'source-over';
-  
-  // 右端をクリア（透明）
-  ctx.clearRect(W-1, 0, 1, H);
-  
-  // 新しい点を描画
-  const y = baselineY + mvToPx(applyLeadScaling(val, phase));
-  // テーマに基づいて色を設定（html[data-theme='light'] で判定）
+  ctx.clearRect(W-steps, 0, steps, H);
+
+  // Prepare stroke style
   const isLight = (document.documentElement.getAttribute('data-theme') === 'light');
   ctx.strokeStyle = isLight ? '#000000' : '#22d3ee';
   ctx.lineWidth = 2;
-  
-  if(lastDrawY !== null){
-    ctx.beginPath();
-    ctx.moveTo(W-2, lastDrawY);
-    ctx.lineTo(W-1, y);
-    ctx.stroke();
-  }
-  lastDrawY = y;
-}
-function animate(ts){
-  if(!running){ 
-    requestAnimationFrame(animate); 
-    return;
-  }
-  
-  let dt = ts - lastTS; 
-  lastTS = ts;
-  const msPerPix = 1000*(1/pxPerMM)/mmPerSec;
-  let acc = dt;
-  
-  while(acc > 0){
-    // 1つずつサンプリングして描画
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Draw polyline for the batch
+  let x = W - steps;
+  let prevY = lastDrawY;
+  ctx.beginPath();
+  for(let i=0; i<steps; i++){
     const drop = shouldDrop(rhythm);
     const v = morphValue(rhythm, phase, drop);
-    scrollAndDraw(v);
-    
-    const step = msPerPix;
-    t += step; 
-    phase += step; 
-    acc -= step;
-    
-    // サイクル完了チェック
+    const y = baselineY + mvToPx(applyLeadScaling(v, phase));
+    if(prevY == null){ prevY = y; }
+    // connect from previous pixel column (x-1) to current x
+    ctx.moveTo(x-1, prevY);
+    ctx.lineTo(x, y);
+    prevY = y;
+
+    // advance time
+    t += msPerPix; phase += msPerPix;
+
+    // beat boundary
     if(phase >= currentRR){
-      phase -= currentRR;
-      beatCounter++;
-      
-      // 特殊パターンの更新
-      if(rhythm === 'ronT'){
-        ronCounter++;
-        ronFlag = (ronCounter % 6) === 5;
-      } else {
-        ronFlag = false;
-      }
-      
+      phase -= currentRR; beatCounter++;
+      if(rhythm === 'ronT'){ ronCounter++; ronFlag = (ronCounter % 6) === 5; } else { ronFlag = false; }
       if(rhythm === 'wenckebach'){
         wenckCount = (wenckCount + 1) % 5;
-        if(wenckCount === 4){
-          wenckDropThisBeat = true;
-          currentPR = wenckPRstart;
-        } else {
-          wenckDropThisBeat = false;
-          currentPR = wenckPRstart + wenckPRstep * wenckCount;
-        }
-      } else {
-        wenckDropThisBeat = false;
-      }
-      
+        if(wenckCount === 4){ wenckDropThisBeat = true; currentPR = wenckPRstart; }
+        else { wenckDropThisBeat = false; currentPR = wenckPRstart + wenckPRstep * wenckCount; }
+      } else { wenckDropThisBeat = false; }
       if(rhythm === 'mobitz2'){
-        mobitzCount = (mobitzCount + 1) % 3;
-        mobitzDropThisBeat = (mobitzCount === 2);
-        currentPR = 200;
-      } else {
-        mobitzDropThisBeat = false;
-      }
-      
+        mobitzCount = (mobitzCount + 1) % 3; mobitzDropThisBeat = (mobitzCount === 2); currentPR = 200;
+      } else { mobitzDropThisBeat = false; }
       updateCycle();
     }
+    x++;
   }
-  
+  ctx.stroke();
+  lastDrawY = prevY;
+
   requestAnimationFrame(animate);
 }
 function resizeCanvas(){
@@ -520,9 +499,10 @@ function resizeCanvas(){
   gtx.imageSmoothingEnabled = false;
   
   drawGrid();
+  // keep continuity after resize if width unchanged; else reset lastDrawY
   lastDrawY = null;
 }
-window.addEventListener('resize', resizeCanvas); setTimeout(resizeCanvas,0);
+let resizeT=null; window.addEventListener('resize', ()=>{ clearTimeout(resizeT); resizeT=setTimeout(resizeCanvas, 80); }); setTimeout(resizeCanvas,0);
 
 // Quiz logic
 const RHY_LIST = ['sinus','avb1','rbbb','lbbb','psvt','vt','mobitz2','wenckebach','chb','af','vf','afl','wpw','earlyRepol','stElevation','stDepression','hypoK','hyperK','qtcLong','qtcShort','torsades','pvc_single','pvc_frequent','pvc_multifocal','shortRun','ronT'];
