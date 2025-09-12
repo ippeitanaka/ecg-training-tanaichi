@@ -346,10 +346,12 @@ function morphValue(kind,p, drop=false){
       return morphBasic(p, {pr:160,qrs:90,qt:400,pAmp:0.22,qAmp:-0.04,rAmp:1.0,sAmp:-0.12,tAmp:0.30,tSkew:1.4,uAmp:0.03});
     }
     case 'avb1': {
-      // First-degree AV block: clearly prolonged, constant PR (≈360 ms)
-      const basePR = 360;
-      setSeg(basePR, 90, 420);
-      return morphBasic(p, {pr: basePR, qrs:90, qt:420, pAmp:0.28, qAmp:-0.05, rAmp:1.0, sAmp:-0.12, tAmp:0.32});
+      // First-degree AV block: PR gradually lengthens from short to long without drops
+      const period = 10000; // 10 s ramp
+      const f = (t % period) / period; // 0 -> 1
+      const prNow = 160 + f * (360 - 160); // 160ms -> 360ms
+      setSeg(prNow, 90, 420);
+      return morphBasic(p, {pr: prNow, qrs:90, qt:420, pAmp:0.28, qAmp:-0.05, rAmp:1.0, sAmp:-0.12, tAmp:0.32});
     }
     case 'rbbb':{
       // Wide QRS (140ms) with RSR' pattern: add second R at end; attenuate S amplitude
@@ -392,7 +394,9 @@ function morphValue(kind,p, drop=false){
     }
     case 'chb':{
       const atrialCycle = 750; // ~80 bpm
-      const atrialP = gauss((t%atrialCycle), 40, 20, 0.22);
+      // rounder atrial P wave using symmetric skewed Gaussian (σ≈32ms)
+      const atrialPhase = (t % atrialCycle);
+      const atrialP = skewGauss(atrialPhase, 40, 32, 32, 0.22);
       setSeg(0,180,500);
       const vent = morphBasic(p,{pr:0,qrs:180,qt:500,pAmp:0.0,qAmp:-0.12,rAmp:0.9,sAmp:-0.24,tAmp:0.06});
       return atrialP + vent;

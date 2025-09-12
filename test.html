@@ -177,10 +177,12 @@ function morphValue(kind, p, drop = false) {
     }
 
     case 'avb1': {
-      // I度房室ブロック: 明確なPR延長（一定、約360ms）
-      const basePR = 360;
-      setSeg(basePR, 90, 420);
-      return morphBasic(p, { pr: basePR, qrs: 90, qt: 420, pAmp: 0.28, qAmp: -0.05, rAmp: 1.0, sAmp: -0.12, tAmp: 0.32 });
+      // I度房室ブロック: PRが徐々に延長（例: 10秒で160→360ms）。脱落はしない。
+      const period = 10000; // 10s
+      const f = (t % period) / period;
+      const prNow = 160 + f * (360 - 160);
+      setSeg(prNow, 90, 420);
+      return morphBasic(p, { pr: prNow, qrs: 90, qt: 420, pAmp: 0.28, qAmp: -0.05, rAmp: 1.0, sAmp: -0.12, tAmp: 0.32 });
     }
 
     case 'rbbb': {
@@ -226,7 +228,9 @@ function morphValue(kind, p, drop = false) {
 
     case 'chb': {
       const atrialCycle = 750;
-      const atrialP = gauss((t % atrialCycle), 40, 20, 0.22);
+      // より丸いP波（skewGaussでσ≈32ms、対称）
+      const atrialPhase = (t % atrialCycle);
+      const atrialP = skewGauss(atrialPhase, 40, 32, 32, 0.22);
       setSeg(0, 180, 500);
       const vent = morphBasic(p, { pr: 0, qrs: 180, qt: 500, pAmp: 0.0, qAmp: -0.12, rAmp: 0.9, sAmp: -0.24, tAmp: 0.06 });
       return atrialP + vent;
