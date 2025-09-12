@@ -97,7 +97,7 @@ const ctx = waveCanvas.getContext('2d');
 const gtx = gridCanvas.getContext('2d');
 let mmPerSec = 25; let mmPerMv = 10; const basePxPerMM = 4; let pxPerMM = basePxPerMM * (window.devicePixelRatio||1);
 let t = 0; let lastTS = performance.now();
-let rhythm = 'sinus'; let rrSchedule = []; let cycleMs = 800; let phase = 0; let nextRRIdx=0;
+let rhythm = 'sinus'; let rrSchedule = []; let phase = 0; let nextRRIdx=0; let currentRR = 800;
 let W = waveCanvas.width; let H = waveCanvas.height; let baselineY = H*0.6; let lastDrawY=null;
 let beatCounter=0; let ronCounter=0; let ronFlag=false;
 let currentPR = 160; let wenckCount=0; const wenckLen=5; const wenckPRstart=160; const wenckPRstep=40; let wenckDropThisBeat=false; let mobitzCount=0; const mobitzLen=3; let mobitzDropThisBeat=false;
@@ -199,7 +199,7 @@ function morphValue(kind,p, drop=false){
     case 'pvc_single':
     case 'pvc_frequent':
     case 'pvc_multifocal':
-  case 'shortRun':{ const isPVC = cycleMs < 800; if(isPVC){ if(kind==='pvc_multifocal' && p<1){ currentPVCSign=(currentPVCSign===1?-1:1);} const amp=(kind==='pvc_multifocal'? currentPVCSign:1); setSeg(0,180,480); return amp*morphBasic(p,{pr:0,qrs:180,qt:480,pAmp:0.0,qAmp:-0.18,rAmp:1.25,sAmp:-0.40,tAmp:0.10}); } else { setSeg(160,90,400); return morphBasic(p,{pr:160,qrs:90,qt:400,pAmp:0.22,qAmp:-0.04,rAmp:1.0,sAmp:-0.12,tAmp:0.30,tSkew:1.4}); } }
+  case 'shortRun':{ const isPVC = currentRR < 800; if(isPVC){ if(kind==='pvc_multifocal' && p<1){ currentPVCSign=(currentPVCSign===1?-1:1);} const amp=(kind==='pvc_multifocal'? currentPVCSign:1); setSeg(0,180,480); return amp*morphBasic(p,{pr:0,qrs:180,qt:480,pAmp:0.0,qAmp:-0.18,rAmp:1.25,sAmp:-0.40,tAmp:0.10}); } else { setSeg(160,90,400); return morphBasic(p,{pr:160,qrs:90,qt:400,pAmp:0.22,qAmp:-0.04,rAmp:1.0,sAmp:-0.12,tAmp:0.30,tSkew:1.4}); } }
   case 'ronT':{ setSeg(160,90,400); let mv=morphBasic(p,{pr:160,qrs:90,qt:400,pAmp:0.22,qAmp:-0.04,rAmp:1.0,sAmp:-0.12,tAmp:0.30,tSkew:1.4}); if(ronFlag){ const qrsOnset=160; const tStart=qrsOnset+90; const start=tStart+70; const width=180; if(p>=start && p<=start+width){ setSeg(0,180,480); mv += morphBasic(p-start,{pr:0,qrs:180,qt:480,pAmp:0.0,qAmp:-0.18,rAmp:1.25,sAmp:-0.40,tAmp:0.10}); } } return mv; }
     default: return morphBasic(p,{});
   }
@@ -243,8 +243,8 @@ function schedule(kind){
 function updateCycle(){
   if(rhythm === 'wenckebach'){
     const base=800; const shortBy = 20 * Math.max(0, Math.min(wenckCount, 3));
-    if(wenckDropThisBeat){ cycleMs = base + 260 + (Math.random()*40-20);} else { cycleMs = base - shortBy + (Math.random()*20-10); }
-  } else if(rhythm === 'af' || rhythm === 'vf' || rrSchedule.length > 1){ cycleMs = rrSchedule[nextRRIdx % rrSchedule.length]; nextRRIdx++; } else { cycleMs = rrSchedule[0]; }
+    if(wenckDropThisBeat){ currentRR = base + 260 + (Math.random()*40-20);} else { currentRR = base - shortBy + (Math.random()*20-10); }
+  } else if(rhythm === 'af' || rhythm === 'vf' || rrSchedule.length > 1){ currentRR = rrSchedule[nextRRIdx % rrSchedule.length]; nextRRIdx++; } else { currentRR = rrSchedule[0]; }
 }
 function shouldDrop(kind){ if(kind==='mobitz2'){ return mobitzDropThisBeat;} if(kind==='wenckebach'){ return wenckDropThisBeat;} if(kind==='chb') return false; return false; }
 function scrollAndDraw(val){
@@ -275,51 +275,58 @@ function animate(ts){
     return;
   }
   
-  const dt = Math.min(40, ts - lastTS); // フレームレート制限
+  let dt = ts - lastTS; 
   lastTS = ts;
-  t += dt;
-  phase += dt;
+  const msPerPix = 1000*(1/pxPerMM)/mmPerSec;
+  let acc = dt;
   
-  // 1フレームで1点のみ描画
-  const drop = shouldDrop(rhythm);
-  const v = morphValue(rhythm, phase, drop);
-  scrollAndDraw(v);
-  
-  // サイクル完了チェック
-  if(phase >= cycleMs){
-    phase -= cycleMs;
-    beatCounter++;
+  while(acc > 0){
+    // 1つずつサンプリングして描画
+    const drop = shouldDrop(rhythm);
+    const v = morphValue(rhythm, phase, drop);
+    scrollAndDraw(v);
     
-    // 特殊パターンの更新
-    if(rhythm === 'ronT'){
-      ronCounter++;
-      ronFlag = (ronCounter % 6) === 5;
-    } else {
-      ronFlag = false;
-    }
+    const step = msPerPix;
+    t += step; 
+    phase += step; 
+    acc -= step;
     
-    if(rhythm === 'wenckebach'){
-      wenckCount = (wenckCount + 1) % 5;
-      if(wenckCount === 4){
-        wenckDropThisBeat = true;
-        currentPR = wenckPRstart;
+    // サイクル完了チェック
+    if(phase >= currentRR){
+      phase -= currentRR;
+      beatCounter++;
+      
+      // 特殊パターンの更新
+      if(rhythm === 'ronT'){
+        ronCounter++;
+        ronFlag = (ronCounter % 6) === 5;
+      } else {
+        ronFlag = false;
+      }
+      
+      if(rhythm === 'wenckebach'){
+        wenckCount = (wenckCount + 1) % 5;
+        if(wenckCount === 4){
+          wenckDropThisBeat = true;
+          currentPR = wenckPRstart;
+        } else {
+          wenckDropThisBeat = false;
+          currentPR = wenckPRstart + wenckPRstep * wenckCount;
+        }
       } else {
         wenckDropThisBeat = false;
-        currentPR = wenckPRstart + wenckPRstep * wenckCount;
       }
-    } else {
-      wenckDropThisBeat = false;
+      
+      if(rhythm === 'mobitz2'){
+        mobitzCount = (mobitzCount + 1) % 3;
+        mobitzDropThisBeat = (mobitzCount === 2);
+        currentPR = 200;
+      } else {
+        mobitzDropThisBeat = false;
+      }
+      
+      updateCycle();
     }
-    
-    if(rhythm === 'mobitz2'){
-      mobitzCount = (mobitzCount + 1) % 3;
-      mobitzDropThisBeat = (mobitzCount === 2);
-      currentPR = 200;
-    } else {
-      mobitzDropThisBeat = false;
-    }
-    
-    updateCycle();
   }
   
   requestAnimationFrame(animate);
@@ -390,7 +397,7 @@ function start(){
   wenckDropThisBeat=false; 
   mobitzCount=0; 
   mobitzDropThisBeat=false; 
-  updateCycle(); 
+  currentRR = rrSchedule[0] || 800;
   
   // ECGキャンバスをクリア（背景は透明のまま）
   ctx.clearRect(0, 0, W, H);
