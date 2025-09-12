@@ -7,7 +7,17 @@
 <meta name="description" content="ECG Trainer: 25 mm/s・10 mm/mV の実寸グリッドで心電図波形をインタラクティブに学べます。多数の不整脈パターン、速度・感度調整、PNG保存、キーボード操作に対応。">
 <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta property="og:title" content="ECG Trainer – 心電図インタラクティブ学習">
+<m    case 'torsades':{
+      // Torsades de pointes: polymorphic VT with twisting QRS amplitude around the baseline
+      // Use a wide QRS and modulate amplitude and axis over a multi-second envelope
+      // Base waveform with wide QRS and modest repolarisation; amplify to emphasise polymorphic nature
+  setSeg(0,320,580);
+  const base = morphBasic(p,{pr:0,qrs:480,qt:580,pAmp:0.0,qAmp:-0.35,rAmp:1.4,sAmp:-0.55,tAmp:0.10});
+      // Envelope varies slowly (~3 s) to produce waxing and waning amplitude
+  const env = 0.55 + 0.45 * Math.sin(2 * Math.PI * ((t % 3500) / 3500));
+  // Alternate polarity over ~7 s to simulate axis rotation
+  const sign = Math.sign(Math.sin(2 * Math.PI * ((t % 7000) / 7000))) || 1;
+      return base * env * sign;y="og:title" content="ECG Trainer – 心電図インタラクティブ学習">
 <meta property="og:description" content="実寸グリッドで滑らかな波形表示。多数のリズムを切替え学習できます。">
 <meta property="og:type" content="website">
 <style>
@@ -349,8 +359,8 @@ function morphValue(kind,p, drop=false){
       return morphBasic(p,{pr:60,qrs:70,qt:320,pAmp:0.04,qAmp:-0.05,rAmp:0.9,sAmp:-0.1,tAmp:0.22,tSkew:1.3});
     }
     case 'vt':{
-      setSeg(20,260,480);
-      return morphBasic(p,{pr:20,qrs:260,qt:480,pAmp:0.0,qAmp:-0.18,rAmp:1.2,sAmp:-0.36,tAmp:0.05,tSkew:1.0});
+      setSeg(20,320,540);
+      return morphBasic(p,{pr:20,qrs:480,qt:540,pAmp:0.0,qAmp:-0.22,rAmp:1.3,sAmp:-0.42,tAmp:0.05,tSkew:1.0});
     }
     case 'mobitz2': {
       if(drop){ setSeg(currentPR,0,320); return morphBasic(p,{pr:currentPR,qrs:0,qt:320,pAmp:0.25,qAmp:0,rAmp:0,sAmp:0,tAmp:0}); }
@@ -472,7 +482,7 @@ function morphValue(kind,p, drop=false){
       // Use a wide QRS and modulate amplitude and axis over a multi-second envelope
       // Base waveform with wide QRS and modest repolarisation; amplify to emphasise polymorphic nature
   setSeg(0,260,520);
-  const base = morphBasic(p,{pr:0,qrs:260,qt:520,pAmp:0.0,qAmp:-0.30,rAmp:1.25,sAmp:-0.48,tAmp:0.10});
+  const base = morphBasic(p,{pr:0,qrs:400,qt:520,pAmp:0.0,qAmp:-0.30,rAmp:1.25,sAmp:-0.48,tAmp:0.10});
       // Envelope varies slowly (~3 s) to produce waxing and waning amplitude
   const env = 0.55 + 0.45 * Math.sin(2 * Math.PI * ((t % 3500) / 3500));
   // Alternate polarity over ~7 s to simulate axis rotation
