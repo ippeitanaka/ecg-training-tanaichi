@@ -328,10 +328,11 @@ function morphValue(kind,p, drop=false){
   switch(kind){
   case 'sinus': setSeg(160,90,400); return morphBasic(p, {pr:160,qrs:90,qt:400,pAmp:0.22,qAmp:-0.04,rAmp:1.0,sAmp:-0.12,tAmp:0.30,tSkew:1.4,uAmp:0.03});
     case 'avb1': {
-      const basePR = 220;
-      const drift = 30 * Math.sin(2*Math.PI*((t%6000)/6000));
-      setSeg(basePR + drift, 90, 400);
-      return morphBasic(p, {pr: basePR + drift, qrs:90, qt:400, pAmp:0.25, qAmp:-0.05, rAmp:1.0, sAmp:-0.12, tAmp:0.32});
+      // Clear PR prolongation (baseline ≈280ms) with gentle drift (±40ms, 8s cycle)
+      const basePR = 280;
+      const drift = 40 * Math.sin(2*Math.PI*((t%8000)/8000));
+      setSeg(basePR + drift, 90, 420);
+      return morphBasic(p, {pr: basePR + drift, qrs:90, qt:420, pAmp:0.28, qAmp:-0.05, rAmp:1.0, sAmp:-0.12, tAmp:0.32});
     }
     case 'rbbb':{
       // Wide QRS (140ms) with RSR' pattern: add second R at end; attenuate S amplitude
