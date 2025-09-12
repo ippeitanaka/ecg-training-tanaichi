@@ -365,12 +365,14 @@ function morphValue(kind,p, drop=false){
       return mv;
     }
     case 'lbbb':{
-      // Wide notched R, absence of Q; negative S slight; T inversion suppressed
-  setSeg(160,160,460);
-  let mv = morphBasic(p, {pr:160,qrs:160,qt:460,pAmp:0.16,qAmp:0.0,rAmp:0.85,sAmp:-0.03,tAmp:0.22,tSkew:1.6});
-      // Broader R plateau
-      // Add broad plateau at early QRS to simulate notched R in left bundle branch block
-      mv += gauss(p,160 + 30,20,0.6);
+      // Left bundle branch block: wide QRS, no initial q, broad notched R, discordant T inversion
+      const pr=160, qrs=170, qt=480;
+      setSeg(pr,qrs,qt);
+      let mv = morphBasic(p, {pr, qrs, qt, pAmp:0.14, qAmp:0.0, rAmp:0.95, sAmp:-0.02, tAmp:-0.28, tSkew:1.4});
+      // Create a broad, notched R morphology (plateau with double peak)
+      mv += gauss(p, pr + qrs*0.35, 18, 0.35); // early R plateau bump
+      mv -= gauss(p, pr + qrs*0.55, 14, 0.12); // shallow mid-notch
+      mv += gauss(p, pr + qrs*0.72, 16, 0.28); // late shoulder
       return mv;
     }
     case 'psvt':{
