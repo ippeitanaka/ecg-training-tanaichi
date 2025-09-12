@@ -395,7 +395,13 @@ function schedule(kind){
     case 'pvc_single': return [810, 795, 805, 590, 1010, 785];
     case 'pvc_frequent': return [815, 595, 1005, 790, 605, 995];
     case 'pvc_multifocal': return [840, 560, 1020, 810, 630, 960];
-    case 'shortRun': return [780, 520, 500, 500, 520, 780];
+    case 'shortRun': {
+      // 約15秒に1回ショートラン（4拍の連発）
+      // 通常拍 830ms × 16拍 ≒ 13.3秒 + 連発（約2.0秒） ≒ 15.3秒
+      const normals = Array(16).fill(830);
+      const run = [520, 480, 480, 520];
+      return [...normals, ...run];
+    }
     case 'ronT': return [800];
     default: return [800];
   }
@@ -418,8 +424,9 @@ function scrollAndDraw(val){
   
   // 新しい点を描画
   const y = baselineY + mvToPx(applyLeadScaling(val, phase));
-  // テーマに基づいて色を設定
-  ctx.strokeStyle = document.body.classList.contains('light-mode') ? '#000000' : '#22d3ee';
+  // テーマに基づいて色を設定（html[data-theme='light'] で判定）
+  const isLight = (document.documentElement.getAttribute('data-theme') === 'light');
+  ctx.strokeStyle = isLight ? '#000000' : '#22d3ee';
   ctx.lineWidth = 2;
   
   if(lastDrawY !== null){
