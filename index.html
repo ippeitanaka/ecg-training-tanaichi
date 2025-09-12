@@ -92,7 +92,9 @@
       <h2 id="rhythmLegend">リズム選択</h2>
       <fieldset aria-labelledby="rhythmLegend">
         <legend class="sr-only">リズム選択</legend>
-        <label><input type="radio" name="rhythm" value="sinus" checked> 洞調律（70/min 前後）</label><br>
+  <label><input type="radio" name="rhythm" value="sinus" checked> 洞調律（70/min 前後）</label><br>
+  <label><input type="radio" name="rhythm" value="sinusArrest"> 洞停止</label><br>
+  <label><input type="radio" name="rhythm" value="saBlock"> 洞ブロック</label><br>
         <label><input type="radio" name="rhythm" value="af"> 心房細動（AF）</label><br>
         <label><input type="radio" name="rhythm" value="afl"> 心房粗動（AFL）</label><br>
         <label><input type="radio" name="rhythm" value="psvt"> 発作性上室頻拍（PSVT）</label><br>
@@ -117,7 +119,9 @@
         <label><input type="radio" name="rhythm" value="pvc_frequent"> 多発性期外収縮（bigeminy）</label><br>
         <label><input type="radio" name="rhythm" value="pvc_multifocal"> 多源性期外収縮</label><br>
         <label><input type="radio" name="rhythm" value="shortRun"> ショートラン（NSVT）</label><br>
-        <label><input type="radio" name="rhythm" value="ronT"> RonT現象</label>
+        <label><input type="radio" name="rhythm" value="ronT"> RonT現象</label><br>
+        <label><input type="radio" name="rhythm" value="sinusArrest"> 洞停止</label><br>
+        <label><input type="radio" name="rhythm" value="saBlock"> 洞ブロック</label>
       </fieldset>
     </div>
     <div class="card">
@@ -327,12 +331,25 @@ function morphBasic(p, opts){
 function morphValue(kind,p, drop=false){
   switch(kind){
   case 'sinus': setSeg(160,90,400); return morphBasic(p, {pr:160,qrs:90,qt:400,pAmp:0.22,qAmp:-0.04,rAmp:1.0,sAmp:-0.12,tAmp:0.30,tSkew:1.4,uAmp:0.03});
+    case 'sinusArrest': {
+      // Sinus arrest: prolonged pause not equal to integer PP multiples
+      // During arrest cycles (cycleMs > 1200), draw only baseline (no P/QRS/T)
+      if(cycleMs > 1200){ setSeg(0,0,0); return 0; }
+      setSeg(160,90,400);
+      return morphBasic(p, {pr:160,qrs:90,qt:400,pAmp:0.22,qAmp:-0.04,rAmp:1.0,sAmp:-0.12,tAmp:0.30,tSkew:1.4,uAmp:0.03});
+    }
+    case 'saBlock': {
+      // SA exit block (type II typical): pause equals multiple of PP (e.g., 2×PP)
+      // Represent pause cycles (cycleMs >= 2*800-20) as flat baseline
+      if(cycleMs >= 1500){ setSeg(0,0,0); return 0; }
+      setSeg(160,90,400);
+      return morphBasic(p, {pr:160,qrs:90,qt:400,pAmp:0.22,qAmp:-0.04,rAmp:1.0,sAmp:-0.12,tAmp:0.30,tSkew:1.4,uAmp:0.03});
+    }
     case 'avb1': {
-      // Clear PR prolongation (baseline ≈280ms) with gentle drift (±40ms, 8s cycle)
-      const basePR = 280;
-      const drift = 40 * Math.sin(2*Math.PI*((t%8000)/8000));
-      setSeg(basePR + drift, 90, 420);
-      return morphBasic(p, {pr: basePR + drift, qrs:90, qt:420, pAmp:0.28, qAmp:-0.05, rAmp:1.0, sAmp:-0.12, tAmp:0.32});
+      // First-degree AV block: clearly prolonged, constant PR (≈360 ms)
+      const basePR = 360;
+      setSeg(basePR, 90, 420);
+      return morphBasic(p, {pr: basePR, qrs:90, qt:420, pAmp:0.28, qAmp:-0.05, rAmp:1.0, sAmp:-0.12, tAmp:0.32});
     }
     case 'rbbb':{
       // Wide QRS (140ms) with RSR' pattern: add second R at end; attenuate S amplitude
@@ -531,6 +548,15 @@ function morphValue(kind,p, drop=false){
 function schedule(kind){
   switch(kind){
     case 'sinus': return [800];
+    case 'sinusArrest': {
+      // 830ms×8拍後に非整数倍の休止（例: 1830ms）
+      const normals = Array(8).fill(830);
+      return [...normals, 1830];
+    }
+    case 'saBlock': {
+      // 2PPの休止（800,800,1600）を繰り返し
+      return [800, 800, 1600];
+    }
     case 'avb1': return [900];
     case 'rbbb': return [800];
     case 'lbbb': return [800];
@@ -807,6 +833,14 @@ const RHY_THUMBS = {
   sinus: {
     title: '洞調律',
     text: '正常の電気伝導。洞結節→心房→房室結節→His-Purkinje系→心室へと順序良く伝導します。規則的なP波、一定のPR、狭いQRS、同方向のTが特徴です。'
+  },
+  sinusArrest: {
+    title: '洞停止',
+    text: '洞結節の発火が一時的に途絶し、非整数倍の長い休止（PP間隔）が出現します。休止中はP/QRS/Tが消失し、再開後は洞調律に復帰します。薬剤・高K・迷走神経緊張などが原因となり得ます。'
+  },
+  saBlock: {
+    title: '洞ブロック（SAブロック）',
+    text: '洞結節から心房への伝導障害。II度（タイプII）では突然1拍が欠落し、休止は直前のPP間隔の整数倍（多くは2PP）になります。休止前後のP-P間隔は等長で、洞停止との鑑別点です。'
   },
   avb1: {
     title: '1度房室ブロック',

@@ -162,12 +162,25 @@ function morphValue(kind, p, drop = false) {
       setSeg(160, 90, 400);
       return morphBasic(p, { pr: 160, qrs: 90, qt: 400, pAmp: 0.22, qAmp: -0.04, rAmp: 1.0, sAmp: -0.12, tAmp: 0.30, tSkew: 1.4, uAmp: 0.03 });
 
+    case 'sinusArrest': {
+      // 洞停止: 非整数倍のPP間隔の長い休止。休止サイクルではフラット。
+      if(currentRR > 1200){ setSeg(0,0,0); return 0; }
+      setSeg(160,90,400);
+      return morphBasic(p, { pr: 160, qrs: 90, qt: 400, pAmp: 0.22, qAmp: -0.04, rAmp: 1.0, sAmp: -0.12, tAmp: 0.30, tSkew: 1.4, uAmp: 0.03 });
+    }
+
+    case 'saBlock': {
+      // 洞房ブロック（II型を想定）: 2PPの休止。休止サイクルはフラット。
+      if(currentRR >= 1500){ setSeg(0,0,0); return 0; }
+      setSeg(160,90,400);
+      return morphBasic(p, { pr: 160, qrs: 90, qt: 400, pAmp: 0.22, qAmp: -0.04, rAmp: 1.0, sAmp: -0.12, tAmp: 0.30, tSkew: 1.4, uAmp: 0.03 });
+    }
+
     case 'avb1': {
-      // 明確なPR延長（基準≈280ms）と緩やかな周期変動（±40ms, 周期8秒）
-      const basePR = 280;
-      const drift = 40 * Math.sin(2 * Math.PI * ((t % 8000) / 8000));
-      setSeg(basePR + drift, 90, 420);
-      return morphBasic(p, { pr: basePR + drift, qrs: 90, qt: 420, pAmp: 0.28, qAmp: -0.05, rAmp: 1.0, sAmp: -0.12, tAmp: 0.32 });
+      // I度房室ブロック: 明確なPR延長（一定、約360ms）
+      const basePR = 360;
+      setSeg(basePR, 90, 420);
+      return morphBasic(p, { pr: basePR, qrs: 90, qt: 420, pAmp: 0.28, qAmp: -0.05, rAmp: 1.0, sAmp: -0.12, tAmp: 0.32 });
     }
 
     case 'rbbb': {
@@ -371,6 +384,12 @@ function schedule(kind){
   // プリ計算されたパターンを使用
   switch(kind){
     case 'sinus': return [800];
+    case 'sinusArrest': {
+      const normals = Array(8).fill(830);
+      return [...normals, 1830];
+    }
+    case 'saBlock':
+      return [800, 800, 1600];
     case 'avb1': return [900];
     case 'rbbb': return [800];
     case 'lbbb': return [800];
@@ -506,9 +525,11 @@ function resizeCanvas(){
 let resizeT=null; window.addEventListener('resize', ()=>{ clearTimeout(resizeT); resizeT=setTimeout(resizeCanvas, 80); }); setTimeout(resizeCanvas,0);
 
 // Quiz logic
-const RHY_LIST = ['sinus','avb1','rbbb','lbbb','psvt','vt','mobitz2','wenckebach','chb','af','vf','afl','wpw','earlyRepol','stElevation','stDepression','hypoK','hyperK','qtcLong','qtcShort','torsades','pvc_single','pvc_frequent','pvc_multifocal','shortRun','ronT'];
+const RHY_LIST = ['sinus','sinusArrest','saBlock','avb1','rbbb','lbbb','psvt','vt','mobitz2','wenckebach','chb','af','vf','afl','wpw','earlyRepol','stElevation','stDepression','hypoK','hyperK','qtcLong','qtcShort','torsades','pvc_single','pvc_frequent','pvc_multifocal','shortRun','ronT'];
 const RHY_JA = {
   sinus: '洞調律',
+  sinusArrest: '洞停止',
+  saBlock: '洞ブロック',
   avb1: '房室ブロック（I度）',
   rbbb: '右脚ブロック',
   lbbb: '左脚ブロック',
