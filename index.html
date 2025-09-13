@@ -81,18 +81,16 @@
     .wrap{grid-template-columns: 1fr}
     aside{border-right:none; border-bottom:1px solid #1f2b3f}
   }
-  /* Smartphone-only: show PC View toggle */
-  .pcview-toggle{ display:none; }
+  /* Smartphone-only: show Mobile View toggle */
+  .view-toggle{ display:none; }
   @media (max-width: 900px){
-    .pcview-toggle{ display:inline-block; }
-    /* Allow forcing PC-like layout on small screens when toggled */
-    html.pc-view .wrap{ grid-template-columns: 340px 1fr; }
-    html.pc-view aside{ border-right:1px solid #1f2b3f; border-bottom:none; }
-  }
-  /* Auto apply PC layout on smartphone landscape */
-  @media (max-width: 900px) and (orientation: landscape){
+    .view-toggle{ display:inline-block; }
+    /* Default PC-like two-column layout on small screens */
     .wrap{ grid-template-columns: 340px 1fr; }
     aside{ border-right:1px solid #1f2b3f; border-bottom:none; }
+    /* When explicitly in mobile view, revert to one column */
+    html.mobile-view .wrap{ grid-template-columns: 1fr; }
+    html.mobile-view aside{ border-right:none; border-bottom:1px solid #1f2b3f; }
   }
 </style>
 </head>
@@ -102,7 +100,7 @@
     <div class="row row-between">
   <h1>東洋医療専門学校　ECG Trainer</h1>
       <div class="toolbar">
-        <button id="pcViewToggle" class="theme-toggle pcview-toggle" title="スマホでPCレイアウト表示を切替" aria-pressed="false">🖥 PCビュー</button>
+  <button id="viewToggle" class="theme-toggle view-toggle" title="スマホでモバイルビューに切替" aria-pressed="false">� モバイルビュー</button>
         <button id="themeToggle" class="theme-toggle" title="テーマ切替（ライト/ダーク）" aria-pressed="false">🌙</button>
         <a class="btn test-link" href="test.html" title="ランダム心電図クイズへ">心電図テスト</a>
       </div>
@@ -1000,7 +998,7 @@ updateRhythmInfo();
 
 // Theme toggle + persistence
 const themeBtn = document.getElementById('themeToggle');
-const pcViewBtn = document.getElementById('pcViewToggle');
+const viewBtn = document.getElementById('viewToggle');
 function applyTheme(theme){
   document.documentElement.setAttribute('data-theme', theme);
   try{ localStorage.setItem('ecg.theme', theme); }catch{}
@@ -1014,21 +1012,25 @@ themeBtn?.addEventListener('click', ()=>{
   applyTheme(current === 'light' ? 'dark' : 'light');
 });
 
-// Smartphone-only PC View toggle (forces two-column layout on small screens)
-function applyPcView(enabled){
-  document.documentElement.classList.toggle('pc-view', !!enabled);
-  try{ localStorage.setItem('ecg.pcview', enabled ? '1' : '0'); }catch{}
-  if(pcViewBtn){ pcViewBtn.setAttribute('aria-pressed', String(!!enabled)); }
-  // recalc canvas sizes/layout after toggle
+// Smartphone-only: Mobile View toggle (default is PC-like)
+function applyView(mode){
+  const isMobile = mode === 'mobile';
+  document.documentElement.classList.toggle('mobile-view', isMobile);
+  try{ localStorage.setItem('ecg.view', isMobile ? 'mobile' : 'pc'); }catch{}
+  if(viewBtn){
+    viewBtn.textContent = isMobile ? '🖥 PCビュー' : '📱 モバイルビュー';
+    viewBtn.title = isMobile ? 'スマホでPCレイアウトに切替' : 'スマホでモバイルビューに切替';
+    viewBtn.setAttribute('aria-pressed', String(isMobile));
+  }
   setTimeout(resizeCanvas, 0);
 }
-pcViewBtn?.addEventListener('click', ()=>{
-  const next = !document.documentElement.classList.contains('pc-view');
-  applyPcView(next);
+viewBtn?.addEventListener('click', ()=>{
+  const nextMode = document.documentElement.classList.contains('mobile-view') ? 'pc' : 'mobile';
+  applyView(nextMode);
 });
-// restore PC view preference (only meaningful on small screens; harmless otherwise)
-const savedPcView = (()=>{ try{ return localStorage.getItem('ecg.pcview'); }catch{ return null; } })();
-if(savedPcView === '1'){ applyPcView(true); }
+// restore view preference; default to PC on small screens
+const savedView = (()=>{ try{ return localStorage.getItem('ecg.view'); }catch{ return null; } })();
+if(savedView){ applyView(savedView); } else { applyView('pc'); }
 
 // Restore saved controls
 try{

@@ -46,12 +46,7 @@
   .control-group input[type="range"]{flex:1; min-width:80px}
   .control-group select{background:var(--btn-bg); color:var(--btn-ink); border:1px solid var(--btn-bd); padding:4px 8px; border-radius:6px}
   footer.site-footer{ margin-top:8px; padding:12px 16px; background:var(--panel); border-top:1px solid #1f2b3f; color:var(--muted); font-size:12px; text-align:center }
-  /* Match index: optional PC view toggle visibility hook (no button here) */
-  .pcview-toggle{ display:none; }
-  /* Auto apply PC layout on smartphone landscape: mimic desktop two-column */
-  @media (max-width: 900px) and (orientation: landscape){
-    .wrap{ grid-template-columns: 340px 1fr; }
-  }
+  /* Test page keeps single-column layout on small screens */
 </style>
 </head>
 <body>
