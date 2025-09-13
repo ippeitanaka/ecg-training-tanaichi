@@ -262,20 +262,16 @@ function morphValue(kind, p, drop = false) {
     }
 
     case 'vf': {
-      setSeg(0, cycleMs * 0.8, cycleMs * 1.1);
+      setSeg(0, cycleMs * 0.7, cycleMs * 1.0);
+      const seed = Math.floor(t / 80) * 80;
       let mv = 0;
       const comps = 4;
-      for (let i = 1; i <= comps; i++) {
-        const fJ = 0.6 * Math.sin(2 * Math.PI * ((t % 3000) / 3000) + i * 0.9)
-                 + 0.4 * Math.sin(2 * Math.PI * ((t % 1700) / 1700) + i * 0.4);
-        const baseF = 2.6 + i * 0.8;
-        const freq = Math.max(1.6, baseF + fJ * 0.6);
-        const env = 0.7 + 0.3 * Math.sin(2 * Math.PI * ((t % 4500) / 4500) + i * 0.5);
-        const amp = (0.20 - i * 0.03) * env;
-        const wob = 0.6 * Math.sin(2 * Math.PI * ((t % 5200) / 5200) + i * 0.2);
-        mv += amp * Math.sin(2 * Math.PI * (t / 1000) * freq + 1.7 * i + wob);
+      for (let i = 0; i < comps; i++) {
+        const freq = 3 + i * 0.7; // ~3–5 Hz
+        const phase = ((seed * (i + 1) * 0.000013) % 1) * 2 * Math.PI;
+        const amp = 0.22 * (1 - i * 0.15);
+        mv += amp * Math.sin(2 * Math.PI * freq * ((t % 80) * 0.001) + phase);
       }
-      mv += 0.04 * Math.sin(2 * Math.PI * ((t % 6000) / 6000));
       return mv;
     }
 
