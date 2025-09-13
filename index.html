@@ -125,7 +125,7 @@
         <label><input type="radio" name="rhythm" value="pvc_frequent"> 多発性期外収縮（bigeminy）</label><br>
         <label><input type="radio" name="rhythm" value="pvc_multifocal"> 多源性期外収縮</label><br>
         <label><input type="radio" name="rhythm" value="shortRun"> ショートラン（NSVT）</label><br>
-  <label><input type="radio" name="rhythm" value="ronT"> RonT</label><br>
+  <label><input type="radio" name="rhythm" value="ronT"> RonT現象</label><br>
       </fieldset>
     </div>
     <div class="card">
@@ -418,13 +418,12 @@ function morphValue(kind,p, drop=false){
       return f + morphBasic(p,{pr:60,qrs:80,qt:320,pAmp:0.0,qAmp:-0.05,rAmp:1.0,sAmp:-0.15,tAmp:0.22,tSkew:1.3});
     }
     case 'vf':{
-      // Ventricular fibrillation: fewer, slower components and larger amplitude for clarity
-      setSeg(0, cycleMs*0.7, cycleMs*1.0);
+      // Chaotic: slower and larger for legibility
+      setSeg(0, cycleMs*0.5, cycleMs*0.9);
       let mv=0;
-      const comps = 4; // fewer harmonics
-      for(let i=1;i<=comps;i++){
-        const freq = 3 + i*0.7; // ~3–5 Hz
-        mv += (0.18 - i*0.02)*Math.sin(2*Math.PI*(t/1000*freq) + i*0.9);
+      for(let i=1;i<=6;i++){
+        const freq = 7 + Math.random()*5;
+        mv += 0.12*Math.sin(2*Math.PI*(t/1000*freq) + i*0.8);
       }
       return mv;
     }
@@ -950,7 +949,7 @@ const RHY_THUMBS = {
     text: '数拍のVTが連発して自然停止。基礎リズムに短いVTエピソードが挿入されます。'
   },
   ronT: {
-    title: 'RonT',
+    title: 'R-on-T現象',
     text: 'T波上の早期心室性期外収縮。脆弱期への刺激で致死性不整脈を誘発しうるため要注意。'
   }
 };

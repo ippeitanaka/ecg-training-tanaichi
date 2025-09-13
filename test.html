@@ -54,7 +54,6 @@
     <a class="btn" href="index.html">← 戻る</a>
   </div>
   <div class="row">
-    <button class="btn" id="pause" aria-pressed="true" title="再生/一時停止">⏯ 再生/一時停止</button>
     <button class="btn" id="reveal">解答</button>
     <button class="btn" id="next">次へ</button>
   </div>
@@ -262,15 +261,14 @@ function morphValue(kind, p, drop = false) {
     }
 
     case 'vf': {
-      setSeg(0, cycleMs * 0.7, cycleMs * 1.0);
-      const seed = Math.floor(t / 80) * 80;
+      setSeg(0, cycleMs * 0.5, cycleMs * 0.9);
+      const seed = Math.floor(t / 50) * 50;
       let mv = 0;
-      const comps = 4;
-      for (let i = 0; i < comps; i++) {
-        const freq = 3 + i * 0.7; // ~3–5 Hz
-        const phase = ((seed * (i + 1) * 0.000013) % 1) * 2 * Math.PI;
-        const amp = 0.22 * (1 - i * 0.15);
-        mv += amp * Math.sin(2 * Math.PI * freq * ((t % 80) * 0.001) + phase);
+      for (let i = 0; i < 6; i++) {
+        const freq = 8 + i * 1.2;
+        const phase = ((seed * (i + 1) * 0.00001) % 1) * 2 * Math.PI;
+        const amp = 0.3 * (1 - i * 0.12);
+        mv += amp * Math.sin(2 * Math.PI * freq * (t % 50) * 0.001 + phase);
       }
       return mv;
     }
@@ -571,7 +569,7 @@ const RHY_JA = {
   pvc_frequent: '期外収縮（頻発）',
   pvc_multifocal: '多源性期外収縮',
   shortRun: '短いVTラン',
-  ronT: 'RonT'
+  ronT: 'R-on-T 現象'
 };
 function pick(){ const i=Math.floor(Math.random()*RHY_LIST.length); return RHY_LIST[i]; }
 function start(){ 
@@ -642,14 +640,6 @@ function initControls(){
 initControls();
 start();
 requestAnimationFrame((ts)=>{ lastTS=ts; requestAnimationFrame(animate); });
-
-// Play/Pause
-document.getElementById('pause').addEventListener('click', ()=>{
-  running = !running;
-  const btn = document.getElementById('pause');
-  if(btn){ btn.setAttribute('aria-pressed', String(running)); }
-  if(running){ lastTS = performance.now(); }
-});
 </script>
 </body>
 </html>
