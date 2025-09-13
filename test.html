@@ -518,7 +518,8 @@ function animate(ts){
   requestAnimationFrame(animate);
 }
 function resizeCanvas(){
-  const dpr = window.devicePixelRatio || 1;
+  const dprRaw = window.devicePixelRatio || 1;
+  const dpr = Math.min(dprRaw, 2);
   const rect = waveCanvas.getBoundingClientRect();
   const cssW = Math.max(600, Math.floor(rect.width));
   const cssH = Math.floor(rect.height);
