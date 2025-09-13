@@ -7,19 +7,25 @@
 <meta name="description" content="ECG Trainer: 25 mm/s・10 mm/mV の実寸グリッドで心電図波形をインタラクティブに学べます。多数の不整脈パターン、速度・感度調整、PNG保存、キーボード操作に対応。">
 <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<m    case 'torsades':{
-      // Torsades de pointes: polymorphic VT with twisting QRS amplitude around the baseline
-      // Use a wide QRS and modulate amplitude and axis over a multi-second envelope
-      // Base waveform with wide QRS and modest repolarisation; amplify to emphasise polymorphic nature
-  setSeg(0,320,580);
-  const base = morphBasic(p,{pr:0,qrs:480,qt:580,pAmp:0.0,qAmp:-0.35,rAmp:1.4,sAmp:-0.55,tAmp:0.10});
-      // Envelope varies slowly (~3 s) to produce waxing and waning amplitude
-  const env = 0.55 + 0.45 * Math.sin(2 * Math.PI * ((t % 3500) / 3500));
-  // Alternate polarity over ~7 s to simulate axis rotation
-  const sign = Math.sign(Math.sin(2 * Math.PI * ((t % 7000) / 7000))) || 1;
-      return base * env * sign;y="og:title" content="ECG Trainer – 心電図インタラクティブ学習">
+<meta property="og:title" content="ECG Trainer – 心電図インタラクティブ学習">
 <meta property="og:description" content="実寸グリッドで滑らかな波形表示。多数のリズムを切替え学習できます。">
 <meta property="og:type" content="website">
+
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-3K0XSVMYL7"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-3K0XSVMYL7');
+  // optional: debug view during development
+  // gtag('config', 'G-3K0XSVMYL7', { debug_mode: true });
+  // optional: anonymize IP if required
+  // gtag('config', 'G-3K0XSVMYL7', { anonymize_ip: true });
+  // optional: document title as page_title override
+  // gtag('config', 'G-3K0XSVMYL7', { page_title: document.title });
+  
+</script>
 <style>
   :root{
     --bg:#0b1220; --panel:#111a2b; --ink:#e6edf3; --muted:#98a2b3; --accent:#5eead4; --warn:#f97316;
