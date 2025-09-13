@@ -77,6 +77,13 @@
   .theme-toggle{background:transparent; border:1px solid var(--btn-bd); padding:6px 10px; border-radius:999px; transform: translateY(-4px)}
   .toolbar .test-link{ transform: translateY(-6px); }
   footer.site-footer{ margin-top:8px; padding:12px 16px; background:var(--panel); border-top:1px solid #1f2b3f; color:var(--muted); font-size:12px; text-align:center }
+  /* Add space between stacked cards in main */
+  main .card + .card{ margin-top:16px; }
+  /* Links section layout */
+  .link-row{ display:flex; align-items:center; gap:12px; flex-wrap:wrap }
+  .link-row img{ width:56px; height:56px; object-fit:contain; border-radius:8px }
+  .link-row a{ color:var(--accent); text-decoration:none; font-weight:600 }
+  .link-row a:hover{ text-decoration:underline }
   @media (max-width: 900px){
     .wrap{grid-template-columns: 1fr}
     aside{border-right:none; border-bottom:1px solid #1f2b3f}
@@ -205,6 +212,13 @@
         <li>規則性 × QRS幅 × Pの関係 で頻脈を鑑別</li>
       </ul>
       <p class="grid-note">方眼は25 mm/s・10 mm/mV基準で描画されています。</p>
+    </section>
+    <section class="card">
+      <h2>リンク集</h2>
+      <div class="link-row">
+        <img src="校章.png" alt="東洋医療専門学校 校章" loading="lazy">
+        <a href="https://www.toyoiryo.ac.jp/gakka/elt/" target="_blank" rel="noopener">東洋医療専門学校ホームページ</a>
+      </div>
     </section>
   </main>
 </div>
