@@ -232,6 +232,9 @@ let baselineY = H*0.6;
 // Lead selection and phase segmentation for P/QRS/T scaling
 let lead = 'II';
 let lastSeg = {pr:160, qrs:90, qt:400};
+// Batch drawing/animation state
+let accumMS = 0;           // accumulate elapsed ms between frames
+const MAX_STEPS = 32;      // cap per-frame pixel steps to avoid jank
 const LEAD_COEFF = {
   I:{p:0.7,qrs:0.7,t:0.6}, II:{p:1.0,qrs:1.0,t:1.0}, III:{p:0.85,qrs:0.85,t:0.9},
   aVR:{p:-0.5,qrs:-0.6,t:-0.5}, aVL:{p:0.4,qrs:0.4,t:0.4}, aVF:{p:0.9,qrs:0.95,t:0.9},
@@ -656,60 +659,64 @@ function shouldDrop(kind){
   return false;
 }
 
-function scrollAndDraw(val){
-  // shift left by 1px
-  const img = ctx.getImageData(1,0,W-1,H);
-  ctx.putImageData(img, 0,0);
-  // clear rightmost line
-  ctx.clearRect(W-1,0,1,H);
-  // draw point
-  const y = baselineY + mvToPx(val);
-  // solid line segment between previous and current sample - color based on theme
+function scrollAndDrawBatch(yValues){
+  const steps = yValues.length;
+  if(steps <= 0) return;
+  // Shift current waveform left by 'steps' px in one operation
+  ctx.drawImage(waveCanvas, -steps, 0);
+  // Clear the newly exposed right strip
+  ctx.clearRect(W - steps, 0, steps, H);
+  // Draw the polyline for new samples across the cleared strip
   const isLight = (document.documentElement.getAttribute('data-theme') === 'light');
   ctx.strokeStyle = isLight ? '#000000' : '#5eead4';
   ctx.lineWidth = 2;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  if(lastDrawY == null){ lastDrawY = y; }
+  const xStart = W - steps;
   ctx.beginPath();
-  ctx.moveTo(W-2, lastDrawY);
-  ctx.lineTo(W-1, y);
+  if(lastDrawY == null){
+    ctx.moveTo(xStart, yValues[0]);
+  } else {
+    ctx.moveTo(xStart - 1, lastDrawY);
+    ctx.lineTo(xStart, yValues[0]);
+  }
+  for(let i=1;i<steps;i++){
+    ctx.lineTo(xStart + i, yValues[i]);
+  }
   ctx.stroke();
-  lastDrawY = y;
+  lastDrawY = yValues[steps - 1];
 }
 
 function animate(ts){
   if(!running){ requestAnimationFrame(animate); return; }
-  let dt = ts - lastTS; lastTS = ts;
+  const dt = ts - lastTS; lastTS = ts;
   const msPerPix = 1000*(1/pxPerMM)/mmPerSec;
-  let acc = dt;
-  while(acc > 0){
-    // update sample and draw
+  accumMS += dt;
+  let steps = Math.floor(accumMS / msPerPix);
+  if(steps <= 0){ requestAnimationFrame(animate); return; }
+  steps = Math.min(steps, MAX_STEPS);
+  const yValues = new Array(steps);
+  for(let i=0;i<steps;i++){
     const drop = shouldDrop(rhythm);
-  const v = morphValue(rhythm, phase, drop);
-  const vl = applyLeadScaling(v, phase);
-  scrollAndDraw(vl);
-    const step = msPerPix;
-    t += step; phase += step; acc -= step;
+    const v = morphValue(rhythm, phase, drop);
+    const vl = applyLeadScaling(v, phase);
+    yValues[i] = baselineY + mvToPx(vl);
+    const stepMs = msPerPix;
+    t += stepMs; phase += stepMs; accumMS -= stepMs;
     if(phase >= cycleMs){
       phase -= cycleMs;
-      // A beat has completed
       beatCounter++;
-      // Determine whether upcoming cycle should include an R-on-T event
       if(rhythm === 'ronT'){
         ronCounter++;
         ronFlag = (ronCounter % ronInterval) === (ronInterval - 1);
       } else {
         ronFlag = false;
       }
-
-      // Update beat-level conduction patterns
       if(rhythm === 'wenckebach'){
-        // pattern: 4 conducted with progressive PR, then a dropped beat
         wenckCount = (wenckCount + 1) % wenckLen;
         if(wenckCount === wenckLen - 1){
           wenckDropThisBeat = true;
-          currentPR = wenckPRstart; // reset for next conducted cycle
+          currentPR = wenckPRstart;
         } else {
           wenckDropThisBeat = false;
           currentPR = wenckPRstart + wenckPRstep * wenckCount;
@@ -717,19 +724,17 @@ function animate(ts){
       } else {
         wenckDropThisBeat = false;
       }
-
       if(rhythm === 'mobitz2'){
-        // pattern: conduct, conduct, drop, repeat (fixed PR)
         mobitzCount = (mobitzCount + 1) % mobitzLen;
         mobitzDropThisBeat = (mobitzCount === mobitzLen - 1);
         currentPR = 200;
       } else {
         mobitzDropThisBeat = false;
       }
-
       updateCycle();
     }
   }
+  scrollAndDrawBatch(yValues);
   requestAnimationFrame(animate);
 }
 
@@ -748,13 +753,14 @@ function init(){
   const pauseBtn = document.getElementById('pause');
   if(pauseBtn){ pauseBtn.setAttribute('aria-pressed', String(running)); }
   lastDrawY = null;
+  accumMS = 0;
 }
 init();
 requestAnimationFrame((ts)=>{ lastTS=ts; requestAnimationFrame(animate); });
 
 // High-DPI and responsive canvas sizing
 function resizeCanvas(){
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const rect = waveCanvas.getBoundingClientRect();
   const cssW = Math.max(600, Math.floor(rect.width));
   const cssH = Math.floor(rect.height);
@@ -764,6 +770,9 @@ function resizeCanvas(){
   gridCanvas.height = Math.floor(cssH * dpr);
   pxPerMM = basePxPerMM * dpr;
   W = waveCanvas.width; H = waveCanvas.height; baselineY = H * 0.6;
+  // disable smoothing for crisp lines and shifts
+  if(ctx){ ctx.imageSmoothingEnabled = false; }
+  if(gtx){ gtx.imageSmoothingEnabled = false; }
   drawGrid();
   lastDrawY = null;
 }
