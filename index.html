@@ -157,7 +157,7 @@
       </fieldset>
     </div>
     <div class="card">
-      <h2>紙送り・感度</h2>
+      <h2>設定</h2>
       <div class="row">
         <label for="bpm" class="pill">心拍数</label>
         <input id="bpm" type="range" min="0" max="250" value="70" aria-label="心拍数">
@@ -189,6 +189,9 @@
           <option value="V5">V5</option>
           <option value="V6">V6</option>
         </select>
+      </div>
+      <div class="row mt-8">
+        <button class="btn" id="defaultBpm">デフォルト値に戻る</button>
       </div>
       <p class="grid-note">大マス=5 mm（200 ms / 0.5 mV）、小マス=1 mm（40 ms / 0.1 mV）</p>
   <p class="grid-note">ショートカット: <span class="kbd">Space</span> 再生/停止・<span class="kbd">R</span> リセット・<span class="kbd">S</span> PNG保存・<span class="kbd">[</span>/<span class="kbd">]</span> 速度・<span class="kbd">-</span>/<span class="kbd">+</span> 感度</p>
@@ -378,6 +381,7 @@ function morphBasic(p, opts){
 // arrhythmia-specific morphological modifications
 // drop: when true, represent non-conducted beat (P present but no QRS/T)
 function morphValue(kind,p, drop=false){
+  if(userBpm == 0) return 0;
   switch(kind){
   case 'sinus': setSeg(160,90,400); return morphBasic(p, {pr:160,qrs:90,qt:400,pAmp:0.22,qAmp:-0.04,rAmp:1.0,sAmp:-0.12,tAmp:0.30,tSkew:1.4,uAmp:0.03});
     case 'sinusArrest': {
@@ -610,6 +614,38 @@ function morphValue(kind,p, drop=false){
     default: return morphBasic(p, {});
   }
 }
+
+// Default BPM for each rhythm
+const defaultBpm = {
+  sinus: 75,
+  sinusArrest: 75,
+  saBlock: 75,
+  avb1: 60,
+  rbbb: 75,
+  lbbb: 75,
+  psvt: 200,
+  vt: 130,
+  torsades: 200,
+  vf: 180,
+  af: 100,
+  afl: 150,
+  wpw: 75,
+  earlyRepol: 75,
+  stElevation: 75,
+  stDepression: 75,
+  hypoK: 60,
+  hyperK: 75,
+  qtcLong: 60,
+  qtcShort: 100,
+  pvc_single: 75,
+  pvc_frequent: 75,
+  pvc_multifocal: 75,
+  shortRun: 75,
+  ronT: 75,
+  chb: 40,
+  mobitz2: 75,
+  wenckebach: 75
+};
 
 // RR schedule (ms) per rhythm
 function schedule(kind){
@@ -854,6 +890,10 @@ radios.forEach(r=> r.addEventListener('change', ()=>{
   try{ localStorage.setItem('ecg.r', rhythm); }catch{}
   rrSchedule = schedule(rhythm);
   nextRRIdx = 0;
+  // set default BPM for the rhythm
+  userBpm = defaultBpm[rhythm] || 70;
+  const bpmEl = document.getElementById('bpm');
+  if(bpmEl){ bpmEl.value = userBpm; document.getElementById('bpmLbl').textContent = userBpm; try{ localStorage.setItem('ecg.bpm', String(userBpm)); }catch{} }
   // reset counters and flags for new rhythm
   beatCounter = 0;
   ronCounter = 0;
@@ -906,6 +946,17 @@ document.getElementById('bpm').addEventListener('input', (e)=>{
     cycleMs = 0; // 停止
   }
   try{ localStorage.setItem('ecg.bpm', String(bpm)); }catch{}
+});
+
+document.getElementById('defaultBpm').addEventListener('click', ()=>{
+  userBpm = defaultBpm[rhythm] || 70;
+  const bpmEl = document.getElementById('bpm');
+  if(bpmEl){ bpmEl.value = userBpm; document.getElementById('bpmLbl').textContent = userBpm; try{ localStorage.setItem('ecg.bpm', String(userBpm)); }catch{} }
+  if(userBpm > 0){
+    cycleMs = 60000 / userBpm;
+  } else {
+    cycleMs = 0;
+  }
 });
 
 // Lead selector
