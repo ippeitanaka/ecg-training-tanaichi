@@ -159,6 +159,11 @@
     <div class="card">
       <h2>紙送り・感度</h2>
       <div class="row">
+        <label for="bpm" class="pill">心拍数</label>
+        <input id="bpm" type="range" min="0" max="250" value="70" aria-label="心拍数">
+        <span id="bpmLbl">70</span> /min
+      </div>
+      <div class="row">
         <label for="speed" class="pill">速度</label>
         <input id="speed" type="range" min="10" max="50" value="25" aria-label="紙送り速度">
         <span id="speedLbl">25</span> mm/s
@@ -255,6 +260,7 @@ let rhythm = 'sinus';
 let rrSchedule = [];
 let cycleMs = 800;
 let phase = 0;
+let userBpm = 70; // ユーザーの心拍数設定
 // Solid ECG line rendering state
 let lastDrawY = null;
 
@@ -664,6 +670,10 @@ function schedule(kind){
   }
 }
 function updateCycle(){
+  if(userBpm > 0){
+    cycleMs = 60000 / userBpm;
+    return;
+  }
   // Advance to next cycle in the schedule. If the rhythm uses a repeating pattern
   // (i.e. rrSchedule length > 1), step through the array; otherwise repeat the first value.
   if(rhythm === 'wenckebach'){
@@ -776,6 +786,11 @@ function animate(ts){
 function init(){
   drawGrid();
   rrSchedule = schedule(rhythm);
+  // ユーザーのbpm設定を読み込み
+  try{
+    const sbpm = localStorage.getItem('ecg.bpm');
+    if(sbpm){ userBpm = +sbpm; const el=document.getElementById('bpm'); if(el){ el.value = sbpm; document.getElementById('bpmLbl').textContent = sbpm; } }
+  }catch{}
   updateCycle();
   phase = 0; t = 0; lastTS = performance.now();
   beatCounter = 0;
@@ -853,14 +868,28 @@ document.getElementById('reset').addEventListener('click', ()=>{
   // reset controls to defaults
   const speedEl = document.getElementById('speed');
   const gainEl = document.getElementById('gain');
+  const bpmEl = document.getElementById('bpm');
   if(speedEl){ speedEl.value = '25'; mmPerSec = 25; document.getElementById('speedLbl').textContent = '25'; try{ localStorage.setItem('ecg.v', '25'); }catch{} }
   if(gainEl){ gainEl.value = '10'; mmPerMv = 10; document.getElementById('gainLbl').textContent = '10'; try{ localStorage.setItem('ecg.g', '10'); }catch{} }
+  if(bpmEl){ bpmEl.value = '70'; cycleMs = 60000 / 70; document.getElementById('bpmLbl').textContent = '70'; try{ localStorage.setItem('ecg.bpm', '70'); }catch{} }
   lastDrawY = null;
 });
 
 document.getElementById('speed').addEventListener('input', (e)=>{ mmPerSec = +e.target.value; document.getElementById('speedLbl').textContent = mmPerSec; try{ localStorage.setItem('ecg.v', String(mmPerSec)); }catch{} });
 
 document.getElementById('gain').addEventListener('input', (e)=>{ mmPerMv = +e.target.value; document.getElementById('gainLbl').textContent = mmPerMv; try{ localStorage.setItem('ecg.g', String(mmPerMv)); }catch{} });
+
+document.getElementById('bpm').addEventListener('input', (e)=>{
+  const bpm = +e.target.value;
+  userBpm = bpm;
+  document.getElementById('bpmLbl').textContent = bpm;
+  if(bpm > 0){
+    cycleMs = 60000 / bpm;
+  } else {
+    cycleMs = 0; // 停止
+  }
+  try{ localStorage.setItem('ecg.bpm', String(bpm)); }catch{}
+});
 
 // Lead selector
 const leadSel = document.getElementById('leadSel');
