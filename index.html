@@ -270,6 +270,8 @@ let lastDrawY = null;
 // Additional state for complex rhythms
 let beatCounter = 0;           // counts the number of completed beats
 let currentPVCSign = 1;        // sign multiplier for multifocal PVCs
+let currentPVCQrs = 240;       // QRS width for multifocal PVCs
+let currentPVCRamp = 1.25;     // R amplitude for multifocal PVCs
 let ronCounter = 0;            // counter for RonT cycles
 const ronInterval = 6;         // interval of beats between R-on-T events
 let ronFlag = false;           // indicates if current cycle should include an R-on-T overlay
@@ -451,9 +453,9 @@ function morphValue(kind,p, drop=false){
       const atrialCycle = 750; // ~80 bpm
       // rounder atrial P wave using symmetric skewed Gaussian (σ≈32ms)
       const atrialPhase = (t % atrialCycle);
-      const atrialP = skewGauss(atrialPhase, 40, 32, 32, 0.22);
-      setSeg(0,180,500);
-      const vent = morphBasic(p,{pr:0,qrs:180,qt:500,pAmp:0.0,qAmp:-0.12,rAmp:0.9,sAmp:-0.24,tAmp:0.06});
+      const atrialP = skewGauss(atrialPhase, 40, 32, 32, 0.25); // slightly higher amplitude
+      setSeg(0,200,550); // wider QRS for junctional escape
+      const vent = morphBasic(p,{pr:0,qrs:200,qt:550,pAmp:0.0,qAmp:-0.15,rAmp:0.8,sAmp:-0.25,tAmp:0.04}); // smaller T wave
       return atrialP + vent;
     }
     case 'af':{
@@ -583,11 +585,18 @@ function morphValue(kind,p, drop=false){
       // PVC variants: use schedule to determine if current cycle is a PVC (cycleMs < 800)
       const isPVC = cycleMs < 800;
       if(isPVC){
-        // multifocal PVCs have varying polarity; assign at start of cycle
-  if(kind === 'pvc_multifocal' && p < 1){ currentPVCSign = (currentPVCSign===1 ? -1 : 1); }
-  const amp = (kind === 'pvc_multifocal' ? currentPVCSign : 1);
-  setSeg(0,240,520);
-  return amp * morphBasic(p,{pr:0,qrs:240,qt:520,pAmp:0.0,qAmp:-0.18,rAmp:1.25,sAmp:-0.40,tAmp:0.10});
+        // multifocal PVCs have varying polarity and morphology; assign at start of cycle
+        if(kind === 'pvc_multifocal' && p < 1){
+          currentPVCSign = (currentPVCSign === 1 ? -1 : 1);
+          // vary QRS width and R amplitude for multifocality
+          currentPVCQrs = 200 + Math.random() * 80; // 200-280ms
+          currentPVCRamp = 1.0 + Math.random() * 0.5; // 1.0-1.5
+        }
+        const amp = (kind === 'pvc_multifocal' ? currentPVCSign : 1);
+        const qrs = (kind === 'pvc_multifocal' ? currentPVCQrs : 240);
+        const rAmp = (kind === 'pvc_multifocal' ? currentPVCRamp : 1.25);
+        setSeg(0, qrs, 520);
+        return amp * morphBasic(p,{pr:0,qrs:qrs,qt:520,pAmp:0.0,qAmp:-0.18,rAmp:rAmp,sAmp:-0.40,tAmp:0.10});
       } else {
         // normal beat
         setSeg(160,90,400);
@@ -851,6 +860,8 @@ function init(){
   ronFlag = false;
   // reset AV block states
   currentPR = 160; wenckCount = 0; wenckDropThisBeat = false; mobitzCount = 0; mobitzDropThisBeat = false;
+  // reset PVC states
+  currentPVCSign = 1; currentPVCQrs = 240; currentPVCRamp = 1.25;
   // reflect play state to button
   const pauseBtn = document.getElementById('pause');
   if(pauseBtn){ pauseBtn.setAttribute('aria-pressed', String(running)); }
@@ -922,6 +933,7 @@ document.getElementById('reset').addEventListener('click', ()=>{
   ronCounter = 0;
   ronFlag = false;
   currentPR = 160; wenckCount = 0; wenckDropThisBeat = false; mobitzCount = 0; mobitzDropThisBeat = false;
+  currentPVCSign = 1; currentPVCQrs = 240; currentPVCRamp = 1.25;
   // reset controls to defaults
   const speedEl = document.getElementById('speed');
   const gainEl = document.getElementById('gain');
