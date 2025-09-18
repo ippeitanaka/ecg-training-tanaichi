@@ -464,7 +464,7 @@ function morphValue(kind,p, drop=false){
     }
     case 'vf':{
       // Ventricular fibrillation: irregular via slow frequency, amplitude, and phase modulation
-      setSeg(0, cycleMs*0.8, cycleMs*1.1);
+      setSeg(0, 300, 412);
       let mv=0;
       const comps = 4;
       for(let i=1;i<=comps;i++){
@@ -671,11 +671,28 @@ function schedule(kind){
 }
 function updateCycle(){
   if(userBpm > 0){
-    cycleMs = 60000 / userBpm;
+    // Calculate average of rrSchedule
+    const avg = rrSchedule.reduce((a,b)=>a+b,0) / rrSchedule.length;
+    const scale = (60000 / userBpm) / avg;
+    if(rhythm === 'wenckebach'){
+      // Link RR to PR prolongation and dropped beats: slight shortening before drop, pause after drop
+      const base = 800 * scale;
+      const shortBy = 40 * Math.max(0, Math.min(wenckCount, wenckLen-2));
+      if(wenckDropThisBeat){
+        cycleMs = base + 300 + (Math.random()*40-20); // longer pause after drop for clarity
+      } else {
+        cycleMs = base - shortBy + (Math.random()*20-10);
+      }
+    }
+    else if(rhythm === 'af' || rhythm === 'vf' || rrSchedule.length > 1){
+      cycleMs = rrSchedule[nextRRIdx % rrSchedule.length] * scale;
+      nextRRIdx++;
+    } else {
+      cycleMs = rrSchedule[0] * scale;
+    }
     return;
   }
-  // Advance to next cycle in the schedule. If the rhythm uses a repeating pattern
-  // (i.e. rrSchedule length > 1), step through the array; otherwise repeat the first value.
+  // Original logic
   if(rhythm === 'wenckebach'){
     // Link RR to PR prolongation and dropped beats: slight shortening before drop, pause after drop
     const base = 800;

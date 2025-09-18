@@ -265,7 +265,7 @@ function morphValue(kind, p, drop = false) {
     }
 
     case 'vf': {
-      setSeg(0, cycleMs * 0.5, cycleMs * 0.9);
+      setSeg(0, 300, 412);
       const seed = Math.floor(t / 50) * 50;
       let mv = 0;
       for (let i = 0; i < 6; i++) {
